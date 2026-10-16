@@ -345,7 +345,7 @@
 	*/
 	DocEngine.prototype.streamXlsx = function(inZip, inRequest) {
 		var self = this;
-		var XLSX = this.lib("XLSX");
+		var XLSX = null;
 		var progress = (inRequest && inRequest.onProgress) || function() {};
 		var wbPath = "xl/workbook.xml";
 		return this.readParts(inZip, [wbPath, "xl/_rels/workbook.xml.rels", "xl/styles.xml", "docProps/core.xml"]).then(function(files) {
@@ -363,6 +363,14 @@
 				return sh.path && inZip.file(sh.path);
 			});
 			var styles = Stream.readStyles(files["xl/styles.xml"]);
+			// SheetJS (its number formatter) is loaded only when a cell style has a format other than
+			// General: it is the largest library, and takes seconds to load on a slow device.
+			var formatted = styles.xfFmt.some(function(f) {
+				return f !== 0 && f !== "General";
+			});
+			if (formatted) {
+				XLSX = self.lib("XLSX");
+			}
 			var sst = new Stream.SharedStrings();
 			return self.streamPart(inZip, "xl/sharedStrings.xml", function(c) {
 				sst.feed(c);

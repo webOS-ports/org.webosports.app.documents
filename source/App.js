@@ -253,7 +253,7 @@ enyo.kind({
 		this.prefs.freeze = !this.prefs.freeze;
 		this.$.viewer.freezeHeader = this.prefs.freeze;
 		this.savePrefs();
-
+		this.$.viewer.$.sheet.setFreezeHeader(this.prefs.freeze);
 	},
 
 	// --- Save a copy -----------------------------------------------------

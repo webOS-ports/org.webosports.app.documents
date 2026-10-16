@@ -429,6 +429,28 @@ t.test("sheet: find goes to the cell", async function() {
 	assert.strictEqual(await page.eval("documentsApp.$.viewer.$.sheet.$.ref.content"), "B15001");
 });
 
+t.test("sheet: app menu freezes and unfreezes the first row; zoom scales the grid", async function() {
+	await open(scenario());
+	await openDoc("/media/internal/sample.xlsx");
+	await page.eval("documentsApp.$.appMenu.open(); 1");
+	await page.waitFor("documentsApp.$.appMenu.isOpen");
+	assert.ok(await page.eval("documentsApp.$.menuFreeze.showing"), "the freeze item is offered for a workbook");
+	assert.strictEqual(await page.eval("documentsApp.$.menuFreeze.caption"), "Unfreeze First Row");
+	await tapControl("documentsApp.$.menuFreeze");
+	await page.waitFor("document.querySelectorAll('.sheet-colinner .fz').length === 0");
+	assert.ok(/Item/.test(await text(".sheet-cells")), "row 1 is back among the cells");
+	assert.strictEqual(await page.eval("JSON.parse(localStorage.getItem('documents.prefs')).freeze"), false);
+	var w1 = await page.eval("document.querySelector('.sheet-space').getBoundingClientRect().width");
+	await page.eval("documentsApp.$.viewer.zoomIn(); documentsApp.$.viewer.zoomIn(); 1");
+	var w2 = await page.eval("document.querySelector('.sheet-space').getBoundingClientRect().width");
+	assert.ok(w2 > w1 * 1.1, w1 + " -> " + w2);
+	await page.eval("documentsApp.$.appMenu.close(); documentsApp.$.pane.selectViewByName('library'); 1");
+	await page.waitFor("documentsApp.$.pane.getViewName() === 'library' && !documentsApp.$.viewer.doc");
+	await page.eval("documentsApp.$.appMenu.open(); 1");
+	assert.ok(!(await page.eval("documentsApp.$.menuFreeze.showing")), "not offered on the library");
+	assert.ok(await page.eval("documentsApp.$.menuFind.disabled"));
+});
+
 t.test("sheet editing: not offered when the app's service is not installed", async function() {
 	await open(scenario({service: false}));
 	await openDoc("/media/internal/sample.xlsx");
