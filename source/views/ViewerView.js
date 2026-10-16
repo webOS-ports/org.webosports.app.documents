@@ -309,15 +309,15 @@ enyo.kind({
 			page.style.width = p.width;
 			page.style.padding = [p.marginTop, p.marginRight, p.marginBottom, p.marginLeft].join(" ");
 			DocRender.apply(page, inResult.model.base);
-			var self = this;
+			var viewer = this;
 			this.renderingAll = true;
 			this.progressive = DocRender.progressive(page, inResult.model.blocks, ctx, function() {
-				self.renderingAll = false;
-				self.timings.complete = Date.now() - self.openStarted;
-				self.$.scroller.calcBoundaries();
+				viewer.renderingAll = false;
+				viewer.timings.complete = Date.now() - viewer.openStarted;
+				viewer.$.scroller.calcBoundaries();
 				// A search typed while the rest was still coming in: search the whole document now.
-				if (self.$.findBar.showing && self.$.findInput.getValue()) {
-					self.runFind();
+				if (viewer.$.findBar.showing && viewer.$.findInput.getValue()) {
+					viewer.runFind();
 				}
 			});
 		}
@@ -393,7 +393,6 @@ enyo.kind({
 
 	updateTools: function() {
 		var has = !!this.doc;
-		var family = has ? this.doc.family : null;
 		var reflowable = has && (this.doc.kind === "docx" || this.doc.kind === "odt");
 		this.$.zoomOut.setDisabled(!has);
 		this.$.zoomIn.setDisabled(!has);

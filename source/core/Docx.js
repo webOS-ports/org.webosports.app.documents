@@ -301,9 +301,6 @@
 		return out;
 	};
 
-	var numFormats = {decimal: "decimal", lowerLetter: "lower-alpha", upperLetter: "upper-alpha", lowerRoman: "lower-roman",
-		upperRoman: "upper-roman", decimalZero: "decimal"};
-
 	function Numbering(inXml) {
 		this.abstracts = {};
 		this.nums = {};

@@ -20,8 +20,8 @@
 (function(root) {
 	var FT = root.FileTypes || (typeof require === "function" ? require("./FileTypes.js") : null);
 
-	//* Directories never worth walking: hidden ones and the app/system stores.
-	var skipDirs = /^(\.|lost\+found$|LOST\.DIR$|Android$)/;
+	//* Directories never worth walking: hidden ones and the file system's own.
+	var skipDirs = /^(\.|lost\+found$|LOST\.DIR$)/;
 
 	/**
 		Splits a comma-joined list of file names into candidate names. Pieces
