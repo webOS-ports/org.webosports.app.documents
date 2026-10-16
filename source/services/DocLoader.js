@@ -260,6 +260,8 @@ var DocLoader = {
 		}
 		entry = this.scripts[inPath] = {loaded: false, waiting: [inCallback]};
 		var s = document.createElement("script");
+		// The libraries hold non-ASCII characters (docx-preview's tab is U+2003).
+		s.charset = "utf-8";
 		s.src = this.base() + inPath;
 		s.onload = function() {
 			entry.loaded = true;

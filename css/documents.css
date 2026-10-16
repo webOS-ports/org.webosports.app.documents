@@ -149,16 +149,17 @@
 	margin: 8px auto;
 }
 
+/* The theme draws each button's ends as 16px borders inside its width (border-box). */
 .library-filters .enyo-grouped-toolbutton {
-	min-width: 64px;
-	padding-left: 6px;
-	padding-right: 6px;
-	box-sizing: border-box;
+	min-width: 100px;
+	white-space: nowrap;
 }
 
 @media (max-width: 520px) {
 	.library-filters .enyo-grouped-toolbutton {
-		min-width: 54px;
+		min-width: 84px;
+		border-left-width: 12px;
+		border-right-width: 12px;
 		font-size: 14px;
 	}
 }

@@ -489,6 +489,12 @@ t.test("sheet editing: an existing name is reported, nothing is overwritten", as
 		await libraryNames();
 		var lib = await page.eval("({doc: document.documentElement.scrollWidth, toolbar: document.querySelector('.library-toolbar').scrollWidth})");
 		assert.ok(lib.doc <= inSize[1] && lib.toolbar <= inSize[1], JSON.stringify(lib));
+		// Each filter's caption fits inside its button (the theme's 16px ends take room from the width).
+		var clipped = await page.eval("Array.prototype.filter.call(document.querySelectorAll('.library-filters .enyo-grouped-toolbutton'), " +
+			"function(b){var r=document.createRange();r.selectNodeContents(b);var t=r.getBoundingClientRect().width;" +
+			"var cs=getComputedStyle(b);var inner=b.getBoundingClientRect().width-parseFloat(cs.borderLeftWidth)-parseFloat(cs.borderRightWidth);" +
+			"return t>inner+0.5;}).map(function(b){return b.textContent;})");
+		assert.deepStrictEqual(clipped, [], "filter captions fit");
 		await openDoc("/media/internal/sample.odt");
 		var reflow = await page.eval("documentsApp.$.viewer.reflow");
 		assert.strictEqual(reflow, inSize[1] < 700, "phones read reflowed text");
