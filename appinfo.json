@@ -1,0 +1,28 @@
+{
+	"id": "org.webosports.app.documents",
+	"version": "0.1.0",
+	"vendor": "WebOS Ports",
+	"vendor_url": "https://github.com/webOS-ports/org.webosports.app.documents",
+	"maintainer": "Herman van Hazendonk <github.com@herrie.org>",
+	"type": "web",
+	"main": "index.html",
+	"title": "Documents",
+	"icon": "icon.png",
+	"splashicon": "icon-256x256.png",
+	"uiRevision": 2,
+	"trustLevel": "trusted",
+	"requiredPermissions": ["filemanager-service.operation", "appmanager.management"],
+	"mimeTypes": [
+		{"mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "extension": "docx"},
+		{"mime": "application/vnd.oasis.opendocument.text", "extension": "odt"},
+		{"mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "extension": "xlsx"},
+		{"mime": "application/vnd.ms-excel", "extension": "xls"},
+		{"mime": "application/vnd.oasis.opendocument.spreadsheet", "extension": "ods"},
+		{"mime": "text/csv", "extension": "csv"},
+		{"mime": "application/vnd.openxmlformats-officedocument.presentationml.presentation", "extension": "pptx"},
+		{"mime": "application/vnd.oasis.opendocument.presentation", "extension": "odp"},
+		{"mime": "text/plain", "extension": "txt"},
+		{"mime": "text/markdown", "extension": "md"}
+	],
+	"keywords": ["Documents", "Office", "Word", "Excel", "PowerPoint", "OpenDocument", "Writer", "Calc", "Impress", "Spreadsheet", "Presentation", "docx", "xlsx", "pptx", "odt", "ods", "odp", "csv", "Markdown", "Viewer", "Reader"]
+}

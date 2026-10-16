@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" xmlns:presentation="urn:oasis:names:tc:opendocument:xmlns:presentation:1.0" xmlns:of="urn:oasis:names:tc:opendocument:xmlns:of:1.2" xmlns:number="urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0" office:version="1.3" office:mimetype="application/vnd.oasis.opendocument.text">
+ <office:meta><dc:title>Fixture Text</dc:title><dc:creator>Documents tests</dc:creator></office:meta>
+ <office:styles>
+  <style:style style:name="Standard" style:family="paragraph"><style:text-properties fo:font-size="12pt"/></style:style>
+  <style:style style:name="Quote" style:family="paragraph" style:parent-style-name="Standard">
+   <style:paragraph-properties fo:margin-left="1cm" fo:text-align="center"/>
+   <style:text-properties fo:font-style="italic"/>
+  </style:style>
+  <text:list-style style:name="Numbering">
+   <text:list-level-style-number text:level="1" style:num-format="1" style:num-suffix="."/>
+   <text:list-level-style-number text:level="2" style:num-format="a" style:num-suffix=")"/>
+  </text:list-style>
+  <text:list-style style:name="Bullets">
+   <text:list-level-style-bullet text:level="1" text:bullet-char="•"/>
+  </text:list-style>
+ </office:styles>
+ <office:automatic-styles>
+  <style:style style:name="T1" style:family="text"><style:text-properties fo:font-weight="bold"/></style:style>
+  <style:style style:name="T2" style:family="text"><style:text-properties fo:color="#c00000" style:text-underline-style="solid"/></style:style>
+  <style:style style:name="T3" style:family="text"><style:text-properties style:text-position="super 58%"/></style:style>
+  <style:style style:name="Cell1" style:family="table-cell"><style:table-cell-properties fo:background-color="#ddeeff" fo:border="0.5pt solid #000000"/></style:style>
+  <style:style style:name="Break" style:family="paragraph" style:parent-style-name="Standard"><style:paragraph-properties fo:break-before="page"/></style:style>
+ </office:automatic-styles>
+ <office:body><office:text>
+  <text:h text:outline-level="1">Fixture heading</text:h>
+  <text:p text:style-name="Standard">Plain, <text:span text:style-name="T1">bold words</text:span> and <text:span text:style-name="T2">red underlined</text:span> text, E=mc<text:span text:style-name="T3">2</text:span>.</text:p>
+  <text:p text:style-name="Standard">Two<text:s text:c="3"/>spaces and a<text:tab/>tab, a <text:a xlink:type="simple" xlink:href="https://www.webos-ports.org/">link</text:a> and a note<text:note text:id="ftn1" text:note-class="footnote"><text:note-citation>1</text:note-citation><text:note-body><text:p>The footnote text.</text:p></text:note-body></text:note>.</text:p>
+  <text:p text:style-name="Quote">A centred quote.</text:p>
+  <text:h text:outline-level="2">Lists</text:h>
+  <text:list text:style-name="Numbering">
+   <text:list-item><text:p>First item</text:p></text:list-item>
+   <text:list-item><text:p>Second item</text:p>
+    <text:list><text:list-item><text:p>Nested item</text:p></text:list-item></text:list>
+   </text:list-item>
+  </text:list>
+  <text:list text:style-name="Bullets">
+   <text:list-item><text:p>Bullet one</text:p></text:list-item>
+   <text:list-item><text:p>Bullet two</text:p></text:list-item>
+  </text:list>
+  <text:h text:outline-level="2">Table</text:h>
+  <table:table table:name="Table1">
+   <table:table-column table:number-columns-repeated="3"/>
+   <table:table-header-rows>
+    <table:table-row>
+     <table:table-cell table:style-name="Cell1" office:value-type="string"><text:p>Fruit</text:p></table:table-cell>
+     <table:table-cell table:style-name="Cell1" office:value-type="string"><text:p>Colour</text:p></table:table-cell>
+     <table:table-cell table:style-name="Cell1" office:value-type="string"><text:p>Count</text:p></table:table-cell>
+    </table:table-row>
+   </table:table-header-rows>
+   <table:table-row>
+    <table:table-cell office:value-type="string"><text:p>Apple</text:p></table:table-cell>
+    <table:table-cell office:value-type="string"><text:p>Green</text:p></table:table-cell>
+    <table:table-cell office:value-type="float" office:value="3"><text:p>3</text:p></table:table-cell>
+   </table:table-row>
+   <table:table-row>
+    <table:table-cell table:number-columns-spanned="2" office:value-type="string"><text:p>Spanning two columns</text:p></table:table-cell>
+    <table:covered-table-cell/>
+    <table:table-cell office:value-type="float" office:value="7"><text:p>7</text:p></table:table-cell>
+   </table:table-row>
+  </table:table>
+  <text:p text:style-name="Standard">A picture: <draw:frame draw:name="Red" text:anchor-type="as-char" svg:width="2cm" svg:height="1cm"><draw:image><office:binary-data>iVBORw0KGgoAAAANSUhEUgAAACgAAAAUCAIAAABwJOjsAAAAJElEQVR4nGM4ISc3IIhh1OJRi0ctHrV41OJRi0ctHrV45FgMAFLhLK5mrmiuAAAAAElFTkSuQmCC</office:binary-data></draw:image><svg:title>Red box</svg:title></draw:frame></text:p>
+  <text:p text:style-name="Break">Second page: findme appears here, and FINDME again, and Findmé with an accent.</text:p>
+ </office:text></office:body>
+</office:document>

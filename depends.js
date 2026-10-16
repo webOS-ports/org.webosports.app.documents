@@ -1,0 +1,22 @@
+enyo.depends(
+	"source/core/Xml.js",
+	"source/core/FileTypes.js",
+	"source/core/Odf.js",
+	"source/core/Pptx.js",
+	"source/core/Text.js",
+	"source/core/Sheets.js",
+	"source/core/Docx.js",
+	"source/core/SheetStream.js",
+	"source/core/Engine.js",
+	"source/core/Library.js",
+	"source/services/DocLoader.js",
+	"source/services/FileService.js",
+	"source/views/DocRender.js",
+	"source/views/Finder.js",
+	"source/views/SheetGrid.js",
+	"source/views/SheetView.js",
+	"source/views/ViewerView.js",
+	"source/views/LibraryView.js",
+	"source/App.js",
+	"css/documents.css"
+);

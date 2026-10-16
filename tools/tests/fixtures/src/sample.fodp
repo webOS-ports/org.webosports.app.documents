@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" xmlns:presentation="urn:oasis:names:tc:opendocument:xmlns:presentation:1.0" xmlns:of="urn:oasis:names:tc:opendocument:xmlns:of:1.2" xmlns:number="urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0" office:version="1.3" office:mimetype="application/vnd.oasis.opendocument.presentation">
+ <office:styles>
+  <style:style style:name="Default-title" style:family="presentation"><style:graphic-properties draw:fill="none" draw:stroke="none"/><style:text-properties fo:font-size="40pt"/></style:style>
+  <style:style style:name="Default-outline1" style:family="presentation"><style:graphic-properties draw:fill="none" draw:stroke="none"/><style:text-properties fo:font-size="28pt"/></style:style>
+ </office:styles>
+ <office:automatic-styles>
+  <style:page-layout style:name="PM1"><style:page-layout-properties fo:page-width="28cm" fo:page-height="15.75cm"/></style:page-layout>
+  <style:style style:name="gr1" style:family="graphic"><style:graphic-properties draw:fill="solid" draw:fill-color="#ffcc00" draw:stroke="none"/></style:style>
+  <style:style style:name="dp1" style:family="drawing-page"><style:drawing-page-properties draw:fill="solid" draw:fill-color="#eeeeff"/></style:style>
+ </office:automatic-styles>
+ <office:master-styles><style:master-page style:name="Default" style:page-layout-name="PM1"/></office:master-styles>
+ <office:body><office:presentation>
+  <draw:page draw:name="Title" draw:master-page-name="Default" draw:style-name="dp1">
+   <draw:frame presentation:style-name="Default-title" presentation:class="title" svg:x="2cm" svg:y="1cm" svg:width="24cm" svg:height="3cm"><draw:text-box><text:p>Fixture slides</text:p></draw:text-box></draw:frame>
+   <draw:frame presentation:style-name="Default-outline1" presentation:class="outline" svg:x="2cm" svg:y="5cm" svg:width="24cm" svg:height="8cm"><draw:text-box>
+    <text:list><text:list-item><text:p>First point</text:p></text:list-item><text:list-item><text:p>Second point</text:p></text:list-item></text:list>
+   </draw:text-box></draw:frame>
+  </draw:page>
+  <draw:page draw:name="Picture" draw:master-page-name="Default">
+   <draw:frame svg:x="2cm" svg:y="2cm" svg:width="8cm" svg:height="6cm"><draw:image><office:binary-data>iVBORw0KGgoAAAANSUhEUgAAAEAAAAAwCAIAAAAuKetIAAAAZElEQVR4nO3PUQkAIBTAwJfEnEY0liH8OITBAtxm7fN1wwUNaEEDWtCAFjSgBQ1oQQNa0IAWNKAFDWhBA1rQgBY0oAUNaEEDWtCAFjSgBQ1oQQNa0IAWNKAFDWhBA1rQgBY8dgFRfWjxpbubcwAAAABJRU5ErkJggg==</office:binary-data></draw:image></draw:frame>
+   <draw:custom-shape draw:style-name="gr1" svg:x="12cm" svg:y="2cm" svg:width="6cm" svg:height="4cm"><text:p>Yellow box</text:p><draw:enhanced-geometry draw:type="rectangle"/></draw:custom-shape>
+  </draw:page>
+  <draw:page draw:name="Last" draw:master-page-name="Default">
+   <draw:frame svg:x="2cm" svg:y="2cm" svg:width="20cm" svg:height="3cm"><draw:text-box><text:p>findme on the last slide</text:p></draw:text-box></draw:frame>
+  </draw:page>
+ </office:presentation></office:body>
+</office:document>

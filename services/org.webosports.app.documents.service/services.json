@@ -1,0 +1,9 @@
+{
+	"id": "org.webosports.app.documents.service",
+	"description": "Documents: writes a saved copy to a new file",
+	"engine": "node",
+	"services": [{
+		"name": "org.webosports.app.documents.service",
+		"description": "Documents: writes a saved copy to a new file"
+	}]
+}

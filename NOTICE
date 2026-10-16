@@ -1,0 +1,15 @@
+Documents for LuneOS
+Copyright 2026 WebOS Ports
+
+This product includes software developed by others, in lib/:
+
+- docx-preview 0.4.1 (lib/docx-preview/), Copyright Volodymyr Baydalka,
+  licensed under the Apache License, Version 2.0 (lib/docx-preview/LICENSE).
+  https://github.com/VolodymyrBaydalka/docxjs
+- SheetJS Community Edition 0.20.3 (lib/sheetjs/), Copyright (C) 2013-present
+  SheetJS LLC, licensed under the Apache License, Version 2.0
+  (lib/sheetjs/LICENSE). https://sheetjs.com
+- JSZip 3.10.2 (lib/jszip/), Copyright (c) 2009-2016 Stuart Knightley,
+  David Duponchel, Franz Buchinger, Antonio Afonso; dual licensed MIT or
+  GPLv3, used here under the MIT license (lib/jszip/LICENSE.markdown).
+  It includes pako, MIT license. https://stuk.github.io/jszip/
