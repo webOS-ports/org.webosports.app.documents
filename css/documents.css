@@ -14,9 +14,10 @@
 }
 
 .library-header {
-	background: #2b6db0;
-	background: linear-gradient(#3d82c7, #22609f);
-	color: #fff;
+	background: linear-gradient(#f2f2f2, #d9d9d9);
+	border-top: 1px solid #a0a0a0;
+	border-bottom: 1px solid #a0a0a0;
+	color: #2a2929;
 	padding: 6px 10px;
 	min-height: 44px;
 	box-sizing: border-box;
@@ -60,7 +61,7 @@
 	font-size: 13px;
 	font-weight: bold;
 	text-transform: uppercase;
-	color: #2b6db0;
+	color: #666;
 	border-bottom: 1px solid #c8c8c8;
 }
 
@@ -80,7 +81,7 @@
 }
 
 .library-item:active {
-	background: #cfe0f1;
+	background: #d8d8d8;
 }
 
 .library-icon {
@@ -90,7 +91,7 @@
 	border-radius: 3px;
 	margin-right: 12px;
 	position: relative;
-	background: #3d82c7;
+	background: #6f7680;
 	color: #fff;
 	font-size: 10px;
 	font-weight: bold;
@@ -107,11 +108,11 @@
 }
 
 .library-icon-sheet {
-	background: #2e8b3e;
+	background: #5b8560;
 }
 
 .library-icon-slides {
-	background: #d0682a;
+	background: #b07048;
 }
 
 .library-text {
@@ -191,8 +192,10 @@
 }
 
 .viewer-header {
-	background: linear-gradient(#3d82c7, #22609f);
-	color: #fff;
+	background: linear-gradient(#f2f2f2, #d9d9d9);
+	border-top: 1px solid #a0a0a0;
+	border-bottom: 1px solid #a0a0a0;
+	color: #2a2929;
 	padding: 4px 10px;
 	min-height: 44px;
 	box-sizing: border-box;
@@ -647,7 +650,7 @@ mark.find-current {
 	min-width: 52px;
 	font-weight: bold;
 	font-size: 14px;
-	color: #2b6db0;
+	color: #2a2929;
 	padding: 0 6px;
 }
 
@@ -816,7 +819,7 @@ mark.find-current {
 .sheet-selection,
 .sheet-frozen-sel {
 	position: absolute;
-	border: 2px solid #2b6db0;
+	border: 2px solid #555;
 	box-sizing: content-box;
 	pointer-events: none;
 	z-index: 3;
@@ -871,7 +874,7 @@ mark.find-current {
 
 .sheet-tab-current {
 	background: #fff;
-	color: #2b6db0;
+	color: #2a2929;
 	font-weight: bold;
 }
 
@@ -923,17 +926,25 @@ mark.find-current {
 	color: #ddd;
 }
 
+.night .library-header,
+.night .viewer-header {
+	background: linear-gradient(#3a3a3a, #262626);
+	border-top-color: #111;
+	border-bottom-color: #111;
+	color: #ddd;
+}
+
 .night .library-item {
 	background: #262626;
 	border-bottom-color: #333;
 }
 
 .night .library-item:active {
-	background: #22405f;
+	background: #3a3a3a;
 }
 
 .night .library-divider {
-	color: #7fb2e5;
+	color: #bbb;
 	border-bottom-color: #3a3a3a;
 }
 
@@ -969,11 +980,11 @@ mark.find-current {
 }
 
 .night .viewer-content mark.find-hit {
-	background: #0040a0;
+	background: #6b5a10;
 }
 
 .night .viewer-content mark.find-current {
-	background: #0069ff;
+	background: #a0661a;
 }
 
 .night .sheet-view,
@@ -1024,7 +1035,7 @@ mark.find-current {
 }
 
 .night .sheet-ref {
-	color: #7fb2e5;
+	color: #bbb;
 }
 
 .night .sheet-tabs {
@@ -1040,7 +1051,7 @@ mark.find-current {
 
 .night .sheet-tab-current {
 	background: #161616;
-	color: #7fb2e5;
+	color: #bbb;
 }
 
 /* --- Small screens ------------------------------------------------------ */
