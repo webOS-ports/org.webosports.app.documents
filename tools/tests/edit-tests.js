@@ -25,6 +25,7 @@ var Formulas = require(path.join(ROOT, "source/core/Formulas.js"));
 var TextEdit = require(path.join(ROOT, "source/core/TextEdit.js"));
 var Engine = require(path.join(ROOT, "source/core/Engine.js"));
 var DocxCopy = require(path.join(ROOT, "source/core/DocxCopy.js"));
+var Pptx = require(path.join(ROOT, "source/core/Pptx.js"));
 
 function buffer(inName) {
 	var b = fs.readFileSync(path.join(FIX, inName));
@@ -489,6 +490,143 @@ t.test("engine: plain text and Markdown are saved as UTF-8", async function() {
 	var e = engine();
 	var bytes = await e.save({format: "md", text: "# Title\nété"});
 	assert.strictEqual(Buffer.from(bytes).toString("utf8"), "# Title\nété");
+});
+
+// --- Slides ------------------------------------------------------------------
+
+var A_NS = "xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\"";
+
+//* A DrawingML paragraph inside a text body, parsed with offsets: {xml, p}.
+function drawingPara(inInner) {
+	var xml = "<a:txBody " + A_NS + "><a:p>" + inInner + "</a:p></a:txBody>";
+	return {xml: xml, p: Xml.child(Xml.parse(xml, {offsets: true}), "a:p")};
+}
+
+function editDrawing(inInner, inText) {
+	var d = drawingPara(inInner);
+	var list = TextEdit.splices(d.xml, d.p, inText, TextEdit.drawingDialect);
+	var out = list ? Xml.splice(d.xml, list) : d.xml;
+	Xml.parse(out);
+	return out.replace(/^<a:txBody[^>]*><a:p>/, "").replace(/<\/a:p><\/a:txBody>$/, "");
+}
+
+t.test("pptx paragraph: words keep their run, a new line is a break and a run like it", function() {
+	var bold = "<a:r><a:rPr b=\"1\"/><a:t>bold</a:t></a:r>";
+	var inner = "<a:r><a:rPr lang=\"en-US\"/><a:t>Plain and </a:t></a:r>" + bold + "<a:r><a:rPr lang=\"en-US\"/><a:t> end.</a:t></a:r>" +
+		"<a:endParaRPr lang=\"en-US\" sz=\"1800\"/>";
+	assert.strictEqual(Pptx.plainText(Pptx.tokens(drawingPara(inner).p)), "Plain and bold end.");
+	assert.strictEqual(editDrawing(inner, "Plain and bold end!"),
+		"<a:r><a:rPr lang=\"en-US\"/><a:t>Plain and </a:t></a:r>" + bold + "<a:r><a:rPr lang=\"en-US\"/><a:t> end!</a:t></a:r><a:endParaRPr lang=\"en-US\" sz=\"1800\"/>");
+	assert.strictEqual(editDrawing(inner, "Plain and very bold end."),
+		"<a:r><a:rPr lang=\"en-US\"/><a:t>Plain and very </a:t></a:r>" + bold + "<a:r><a:rPr lang=\"en-US\"/><a:t> end.</a:t></a:r><a:endParaRPr lang=\"en-US\" sz=\"1800\"/>");
+	assert.strictEqual(editDrawing(inner, "Plain and bo\nld end."),
+		"<a:r><a:rPr lang=\"en-US\"/><a:t>Plain and </a:t></a:r><a:r><a:rPr b=\"1\"/><a:t>bo</a:t></a:r><a:br/><a:r><a:rPr b=\"1\"/><a:t>ld</a:t></a:r>" +
+		"<a:r><a:rPr lang=\"en-US\"/><a:t> end.</a:t></a:r><a:endParaRPr lang=\"en-US\" sz=\"1800\"/>",
+		"the line after the break keeps the run's properties");
+	assert.strictEqual(editDrawing(inner, "Plain and bold end."), "<a:r><a:rPr lang=\"en-US\"/><a:t>Plain and </a:t></a:r>" + bold +
+		"<a:r><a:rPr lang=\"en-US\"/><a:t> end.</a:t></a:r><a:endParaRPr lang=\"en-US\" sz=\"1800\"/>", "the same text: nothing changes");
+});
+
+t.test("pptx paragraph: breaks, fields, an empty paragraph and escaping", function() {
+	var inner = "<a:r><a:t>one</a:t></a:r><a:br><a:rPr/></a:br><a:r><a:t>two</a:t></a:r>" +
+		"<a:fld id=\"{1}\" type=\"slidenum\"><a:t>7</a:t></a:fld><a:endParaRPr sz=\"2000\"/>";
+	assert.strictEqual(Pptx.plainText(Pptx.tokens(drawingPara(inner).p)), "one\ntwo7");
+	assert.strictEqual(editDrawing(inner, "onetwo7"), "<a:r><a:t>one</a:t></a:r><a:r><a:t>two</a:t></a:r>" +
+		"<a:fld id=\"{1}\" type=\"slidenum\"><a:t>7</a:t></a:fld><a:endParaRPr sz=\"2000\"/>", "a deleted break goes");
+	assert.strictEqual(editDrawing(inner, "one\ntwo"), "<a:r><a:t>one</a:t></a:r><a:br><a:rPr/></a:br><a:r><a:t>two</a:t></a:r>" +
+		"<a:endParaRPr sz=\"2000\"/>", "a field that lost its text goes");
+	assert.strictEqual(editDrawing("<a:endParaRPr lang=\"de-DE\" sz=\"2000\"><a:solidFill/></a:endParaRPr>", "New <b> & more\nline"),
+		"<a:r><a:rPr lang=\"de-DE\" sz=\"2000\"><a:solidFill/></a:rPr><a:t>New &lt;b&gt; &amp; more</a:t></a:r><a:br/>" +
+		"<a:r><a:rPr lang=\"de-DE\" sz=\"2000\"><a:solidFill/></a:rPr><a:t>line</a:t></a:r>" +
+		"<a:endParaRPr lang=\"de-DE\" sz=\"2000\"><a:solidFill/></a:endParaRPr>", "an empty paragraph gets runs formatted as its end");
+});
+
+t.test("engine: an edited .pptx is the original with only the slide changed; the slide is read again", async function() {
+	var e = engine();
+	var r = await e.open({name: "sample.pptx", buffer: buffer("sample.pptx")});
+	assert.ok(r.editable);
+	var ids = [];
+	r.model.slides.forEach(function(s, si) {
+		s.items.forEach(function(it) {
+			(it.b || []).forEach(function(b) {
+				if (b.id !== undefined) {
+					ids.push({slide: si, id: b.id, pt: b.pt});
+				}
+			});
+		});
+	});
+	assert.deepStrictEqual(ids.map(function(x) {
+		return x.pt;
+	}), ["Fixture slides", "First point", "Second point", "Yellow box", "findme on the last slide"], "the slides' own text, not the master's");
+	var res = await e.edit({para: {id: 1, text: "First point, edited"}});
+	assert.strictEqual(res.slide.index, 0);
+	assert.ok(JSON.stringify(res.slide.model).indexOf("First point, edited") > 0);
+	var again = await e.edit({para: {id: 4, text: "findme on the very last slide"}});
+	assert.strictEqual(again.slide.index, 2, "ids still the same after the deck was read again");
+	var bytes = await e.save({format: "pptx"});
+	var before = await entries(new Uint8Array(buffer("sample.pptx")));
+	var after = await entries(bytes);
+	var changed = Object.keys(before).filter(function(k) {
+		return after[k] !== before[k];
+	}).sort();
+	assert.deepStrictEqual(changed, ["ppt/slides/slide1.xml", "ppt/slides/slide3.xml"]);
+	var e2 = engine();
+	var r2 = await e2.open({name: "copy.pptx", buffer: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)});
+	assert.ok(JSON.stringify(r2.model).indexOf("First point, edited") > 0);
+});
+
+t.test("engine: text a slide's master draws is shown but not editable", async function() {
+	var zip = await JSZip.loadAsync(buffer("sample.pptx"));
+	var path = "ppt/slideMasters/slideMaster1.xml";
+	var master = await zip.file(path).async("string");
+	var box = "<p:sp><p:nvSpPr><p:cNvPr id=\"99\" name=\"Footer box\"/><p:cNvSpPr txBox=\"1\"/><p:nvPr/></p:nvSpPr>" +
+		"<p:spPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"3000000\" cy=\"400000\"/></a:xfrm><a:prstGeom prst=\"rect\"/></p:spPr>" +
+		"<p:txBody><a:bodyPr/><a:p><a:r><a:t>Master footer</a:t></a:r></a:p></p:txBody></p:sp>";
+	zip.file(path, master.replace("</p:spTree>", box + "</p:spTree>"));
+	var bytes = await zip.generateAsync({type: "uint8array"});
+	var e = engine();
+	var r = await e.open({name: "m.pptx", buffer: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)});
+	var found = [];
+	r.model.slides[0].items.forEach(function(it) {
+		(it.b || []).forEach(function(b) {
+			if (b.r && JSON.stringify(b.r).indexOf("Master footer") >= 0) {
+				found.push(b);
+			}
+		});
+	});
+	assert.ok(found.length >= 1, "the master's text is drawn on the slide");
+	found.forEach(function(b) {
+		assert.strictEqual(b.id, undefined, "but it is the master's, not the slide's: not editable");
+	});
+});
+
+t.test("engine: an edited .odp is the original with only content.xml changed", async function() {
+	var e = engine();
+	var r = await e.open({name: "sample.odp", buffer: buffer("sample.odp")});
+	assert.ok(r.editable);
+	var first = null;
+	(function walk(bs) {
+		(bs || []).forEach(function(b) {
+			if (!first && b.id !== undefined && /Yellow/.test(b.pt)) {
+				first = b;
+			}
+			(b.items || []).forEach(walk);
+		});
+	})([].concat.apply([], r.model.slides.map(function(s) {
+		return [].concat.apply([], s.items.map(function(it) {
+			return it.b || [];
+		}));
+	})));
+	assert.ok(first, "the box's paragraph is editable");
+	var res = await e.edit({para: {id: first.id, text: "Yellow box, edited"}});
+	assert.strictEqual(res.block.pt, "Yellow box, edited");
+	var bytes = await e.save({format: "odp"});
+	var before = await entries(new Uint8Array(buffer("sample.odp")));
+	var after = await entries(bytes);
+	assert.deepStrictEqual(Object.keys(before).filter(function(k) {
+		return after[k] !== before[k];
+	}), ["content.xml"]);
+	assert.ok(/Yellow box, edited/.test(after["content.xml"]));
 });
 
 // --- Word copies from the .docx editor ------------------------------------------

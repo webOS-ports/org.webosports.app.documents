@@ -385,6 +385,10 @@ enyo.kind({
 		} else if (family === "slides") {
 			content.className = "viewer-content doc-slides";
 			this.slideBoxes = DocRender.slides(content, inResult.model.slides, ctx);
+			if (inResult.editable) {
+				this.indexSlides(inResult.model.slides);
+				this.offerEditing();
+			}
 		} else {
 			// ODF text, or a large Word document read by Docx.js: pages of blocks, a slice at a time.
 			content.className = "viewer-content doc-odf" + (inResult.simplified ? " doc-simplified" : "");
@@ -645,8 +649,8 @@ enyo.kind({
 		this.applyLayout();
 		if (this.doc.family !== "sheet" && v) {
 			var b = s.getBoundaries();
-			var left = Math.max(0, Math.min(b.right - v.clientWidth, cx * this.zoom - v.clientWidth / 2));
-			var top = Math.max(0, Math.min(b.bottom - v.clientHeight, cy * this.zoom - v.clientHeight / 2));
+			var left = Math.max(0, Math.min(b.right, cx * this.zoom - v.clientWidth / 2));
+			var top = Math.max(0, Math.min(b.bottom, cy * this.zoom - v.clientHeight / 2));
 			s.setScrollPositionDirect(left, top);
 		}
 	},
@@ -823,7 +827,11 @@ enyo.kind({
 		this.scrollToNode(mark);
 	},
 
-	scrollToNode: function(inNode) {
+	/**
+		inNode brought into view, a third down the screen; or (inAtBottom) its
+		bottom at the bottom of the screen, for a box under what it edits.
+	*/
+	scrollToNode: function(inNode, inAtBottom) {
 		if (!inNode) {
 			return;
 		}
@@ -832,11 +840,12 @@ enyo.kind({
 		var content = this.$.content.hasNode();
 		var r = inNode.getBoundingClientRect(), c = content.getBoundingClientRect(), v = view.getBoundingClientRect();
 		var y = r.top - c.top, x = r.left - c.left;
+		// The boundaries are the scroll positions' limits (Enyo's BasicScroller), not the content's size.
 		var b = s.getBoundaries();
-		var top = Math.max(0, Math.min(b.bottom - v.height, y - v.height / 3));
+		var top = Math.max(0, Math.min(b.bottom, inAtBottom ? y + r.height + 12 - v.height : y - v.height / 3));
 		var left = s.scrollLeft;
 		if (x < left || x + r.width > left + v.width) {
-			left = Math.max(0, Math.min(b.right - v.width, x - v.width / 3));
+			left = Math.max(0, Math.min(b.right, x - v.width / 3));
 		}
 		s.setScrollPositionDirect(left, top);
 	},
@@ -986,7 +995,7 @@ enyo.kind({
 	//* The edits and the format a copy is written in (the document's own; xls as xlsx).
 	saveRequest: function() {
 		var kind = this.doc ? this.doc.kind : "";
-		if (kind === "odt" || kind === "docx") {
+		if (kind === "odt" || kind === "docx" || kind === "odp" || kind === "pptx") {
 			return {format: kind};
 		}
 		if (kind === "txt" || kind === "md") {
@@ -1006,6 +1015,15 @@ enyo.kind({
 				self.resized();
 			}
 		});
+	},
+
+	//* The paragraphs of a presentation's slides that can be edited.
+	indexSlides: function(inSlides) {
+		for (var i = 0; i < inSlides.length; i++) {
+			for (var k = 0; k < inSlides[i].items.length; k++) {
+				this.indexParagraphs(inSlides[i].items[k].b);
+			}
+		}
 	},
 
 	//* Every paragraph of the model that can be edited, by id.
@@ -1301,7 +1319,11 @@ enyo.kind({
 			if (!inNode.parentNode) {
 				return;
 			}
-			var host = self.editorHost(inNode.parentNode, inNode, "doc-para-editor");
+			// On a slide (drawn smaller or larger) the box goes under the slide, at the page's own size; the
+			// paragraph stays in view, marked.
+			var frame = self.slideBoxes ? self.closestClass(inNode, "doc-slide-frame") : null;
+			var host = frame ? self.editorHost(frame.parentNode, frame.nextSibling, "doc-para-editor doc-slide-editor") :
+				self.editorHost(inNode.parentNode, inNode, "doc-para-editor");
 			var box = host.node;
 			var ta = DocRender.el("textarea", "doc-para-input", box);
 			ta.value = block.pt;
@@ -1327,11 +1349,42 @@ enyo.kind({
 			self.onTap(done, function() {
 				self.commitParagraph();
 			});
-			inNode.style.display = "none";
-			self.paraEditor = {id: id, node: inNode, host: host, input: ta, error: err};
+			if (frame) {
+				inNode.classList.add("doc-para-editing");
+			} else {
+				inNode.style.display = "none";
+			}
+			self.paraEditor = {id: id, node: inNode, host: host, input: ta, error: err, frame: frame};
 			self.fitTextArea(ta);
+			if (frame) {
+				// Under the slide it may be off the screen: the box at the bottom, as much of its slide as fits above.
+				self.scrollToNode(host.node, true);
+			}
 			ta.focus();
 		});
+	},
+
+	closestClass: function(inNode, inClass) {
+		for (var n = inNode; n && n.classList; n = n.parentNode) {
+			if (n.classList.contains(inClass)) {
+				return n;
+			}
+		}
+		return null;
+	},
+
+	//* Slide inIndex drawn again from inModel (after an edit), its paragraphs indexed again.
+	redrawSlide: function(inIndex, inModel) {
+		var box = this.slideBoxes && this.slideBoxes[inIndex];
+		if (!box) {
+			return;
+		}
+		var holder = document.createElement("div");
+		var fresh = DocRender.slides(holder, [inModel], this.renderCtx || {images: {}}, inIndex)[0];
+		box.frame.parentNode.replaceChild(fresh.frame, box.frame);
+		this.slideBoxes[inIndex] = fresh;
+		this.indexSlides([inModel]);
+		this.applyLayout();
 	},
 
 	cancelParagraph: function() {
@@ -1341,6 +1394,7 @@ enyo.kind({
 		}
 		this.paraEditor = null;
 		ed.node.style.display = "";
+		ed.node.classList.remove("doc-para-editing");
 		this.dropEditorHost(ed.host);
 		return true;
 	},
@@ -1377,7 +1431,12 @@ enyo.kind({
 			}
 			var block = inResult && inResult.block;
 			self.paraEditor = null;
-			if (block) {
+			ed.node.classList.remove("doc-para-editing");
+			if (inResult && inResult.slide) {
+				// A .pptx slide is read again whole: drawn again in its place.
+				self.redrawSlide(inResult.slide.index, inResult.slide.model);
+				self.markEdited();
+			} else if (block) {
 				self.paraBlocks[ed.id] = block;
 				var node = DocRender.paragraph(block, self.renderCtx || {images: {}});
 				ed.node.parentNode.replaceChild(node, ed.node);

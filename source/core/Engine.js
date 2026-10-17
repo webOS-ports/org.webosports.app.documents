@@ -79,6 +79,7 @@
 		// The file's bytes, for a copy that keeps what is not edited; and what it is.
 		this.source = null;
 		this.textSession = null;
+		this.deck = null;
 		this.calc = null;
 	}
 
@@ -107,6 +108,7 @@
 		this.kind = null;
 		this.source = null;
 		this.textSession = null;
+		this.deck = null;
 		if (this.calc) {
 			this.calc.destroy();
 			this.calc = null;
@@ -287,15 +289,23 @@
 					});
 				case "odp":
 					return self.readParts(zip, ["content.xml", "styles.xml", "meta.xml"]).then(function(files) {
-						return self.withImages(zip, {kind: "odp", family: "slides", model: Odf.presentation(files)}, files);
+						// The slides' paragraphs are tracked, for editing, as a text document's are.
+						var track = {};
+						var model = Odf.presentation(files, {track: track});
+						self.source = {kind: "odp", buffer: inBuffer};
+						self.textSession = TextEdit.session(files["content.xml"], track);
+						return self.withImages(zip, {kind: "odp", family: "slides", model: model, editable: true}, files);
 					});
 				case "pptx":
 					var parts = names.filter(function(n) {
 						return /\.(xml|rels)$/i.test(n) && !/^ppt\/(slides\/)?(notesSlides|comments|embeddings)\//.test(n);
 					});
 					return self.readParts(zip, parts).then(function(files) {
-						var result = {kind: "pptx", family: "slides", model: Pptx.parse(files)};
+						var track = {};
+						var result = {kind: "pptx", family: "slides", model: Pptx.parse(files, track), editable: true};
 						result.model.meta = Pptx.coreProps(files["docProps/core.xml"]);
+						self.source = {kind: "pptx", buffer: inBuffer};
+						self.deck = {files: files, track: track, changed: {}};
 						return self.withImages(zip, result, files);
 					});
 				case "docx":
@@ -652,6 +662,10 @@
 	DocEngine.prototype.edit = function(inRequest) {
 		var self = this;
 		return new Promise(function(resolve) {
+			if (inRequest.para && self.deck) {
+				resolve(self.editSlideParagraph(inRequest.para.id, inRequest.para.text));
+				return;
+			}
 			if (inRequest.para) {
 				if (!self.textSession) {
 					throw new Error("This document cannot be edited.");
@@ -673,6 +687,65 @@
 			})});
 		});
 	};
+
+	/**
+		A paragraph of a .pptx slide: its runs in the slide's XML are changed
+		(TextEdit's DrawingML dialect), then the deck is read again. Resolves
+		with {slide: {index, model}} (the slide to show again; its paragraphs
+		keep their ids), or {slide: null} when nothing changed.
+	*/
+	DocEngine.prototype.editSlideParagraph = function(inId, inText) {
+		var deck = this.deck;
+		var para = deck.track.paras[inId];
+		if (!para) {
+			throw new Error("This paragraph can no longer be edited.");
+		}
+		var xml = deck.files[para.part];
+		var list = TextEdit.splices(xml, para.el, inText, TextEdit.drawingDialect);
+		if (!list) {
+			return {slide: null};
+		}
+		var X = need("DocXml", "./Xml.js");
+		deck.files[para.part] = X.splice(xml, list);
+		deck.changed[para.part] = true;
+		var track = {};
+		var model = Pptx.parse(deck.files, track);
+		deck.track = track;
+		for (var i = 0; i < model.slides.length; i++) {
+			if (slideHas(model.slides[i], inId)) {
+				return {slide: {index: i, model: model.slides[i]}};
+			}
+		}
+		throw new Error("The edited slide was not found again.");
+	};
+
+	//* Whether a slide model holds the paragraph with id inId.
+	function slideHas(inSlide, inId) {
+		var found = false;
+		var walk = function(inBlocks) {
+			(inBlocks || []).forEach(function(b) {
+				if (found) {
+					return;
+				}
+				if (b.id === inId) {
+					found = true;
+				}
+				(b.rows || []).forEach(function(r) {
+					r.cells.forEach(function(c) {
+						walk(c.b);
+					});
+				});
+				(b.items || []).forEach(walk);
+				if (b.b) {
+					walk(b.b);
+				}
+			});
+		};
+		inSlide.items.forEach(function(it) {
+			walk(it.b);
+		});
+		return found;
+	}
 
 	//* The workbook's calculator, built on first use; null when it cannot be (no library, or it failed).
 	DocEngine.prototype.calculator = function() {
@@ -748,11 +821,21 @@
 		if (format === "txt" || format === "md") {
 			return Promise.resolve(new TextEncoder().encode(String(inRequest.text || "")));
 		}
-		if (format === "odt") {
+		if (format === "odt" || format === "odp") {
 			if (!this.textSession || !this.source) {
 				return Promise.reject(new Error("Nothing to save."));
 			}
 			return this.writeZip({"content.xml": this.textSession.xml});
+		}
+		if (format === "pptx") {
+			if (!this.deck || !this.source) {
+				return Promise.reject(new Error("Nothing to save."));
+			}
+			var files = {}, deck = this.deck;
+			Object.keys(deck.changed).forEach(function(k) {
+				files[k] = deck.files[k];
+			});
+			return this.writeZip(files);
 		}
 		var edits = inRequest.edits || [];
 		if (this.source && this.workbook && this.source.kind === format) {

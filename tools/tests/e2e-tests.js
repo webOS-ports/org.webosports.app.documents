@@ -647,6 +647,49 @@ t.test("text editing: a tapped paragraph is edited in place and saved as a copy 
 	}), "the pictures are in the copy");
 });
 
+[["sample.pptx", "ppt/slides/slide1.xml"], ["sample.odp", "content.xml"]].forEach(function(inCase) {
+	t.test("slide editing: a paragraph on a slide of " + inCase[0] + ", edited under the slide and saved as a copy", async function() {
+		await open(scenario({service: true}));
+		await openDoc("/media/internal/" + inCase[0]);
+		await page.waitFor("documentsApp.$.viewer.$.editButton.showing");
+		await page.eval("documentsApp.$.viewer.toggleEdit(); 1");
+		var pid = await page.eval("Array.prototype.filter.call(document.querySelectorAll('.doc-slide [data-pid]'), function(x){return /Yellow box/.test(x.textContent);})[0].getAttribute('data-pid')");
+		// On the second slide, below the screen: brought into view first (the scroller is Enyo's).
+		await page.eval("documentsApp.$.viewer.scrollToNode(document.querySelector(\".doc-slide [data-pid='" + pid + "']\")); 1");
+		await page.tap(".doc-slide [data-pid='" + pid + "']");
+		await page.waitFor("document.querySelector('.doc-slide-editor .doc-para-input')");
+		assert.strictEqual(await page.eval("document.querySelector('.doc-para-input').value"), "Yellow box");
+		assert.ok(await page.eval("document.querySelector('.doc-slide-editor').parentNode.previousSibling.classList.contains('doc-slide-frame')"),
+			"the box is under its slide, not in the scaled slide");
+		assert.ok(await page.eval("document.querySelector('.doc-para-editing') !== null"), "the paragraph is marked");
+		if (SHOTS) {
+			await page.screenshot(path.join(OUT, "shots", "edit-slide-" + inCase[0].replace(".", "-") + ".png"));
+		}
+		await page.eval("document.querySelector('.doc-para-input').value = 'Yellow box, edited'; 1");
+		await page.tap(".doc-para-done");
+		await page.waitFor("!document.querySelector('.doc-para-input') && /Yellow box, edited/.test(document.querySelector('.viewer-content').textContent)", 10000);
+		assert.strictEqual(await page.eval("document.querySelectorAll('.doc-slide-frame').length"), await page.eval("documentsApp.$.viewer.slideBoxes.length"));
+		assert.strictEqual(await page.eval("document.querySelectorAll('.doc-slide-number')[1].textContent"), "2", "slides keep their numbers");
+		await page.waitFor("documentsApp.$.viewer.$.saveButton.showing");
+		await page.eval("documentsApp.$.viewer.back(); documentsApp.$.viewer.saveCopy(); 1");
+		await page.waitFor("documentsApp.$.saveDialog.isOpen");
+		assert.strictEqual(await page.eval("documentsApp.$.saveName.getValue()"), inCase[0].replace(".", " (edited)."));
+		await page.eval("documentsApp.doSave(); 1");
+		await page.waitFor("!documentsApp.$.saveDialog.isOpen", 10000);
+		var w = await calls("luna", "service/writeNew");
+		var JSZip = require(path.join(ROOT, "lib/jszip/jszip.min.js"));
+		var zip = await JSZip.loadAsync(Buffer.from(w[0].params.data, "base64"));
+		var all = "";
+		var names = Object.keys(zip.files).filter(function(n) {
+			return /slides\/slide\d+\.xml$|^content\.xml$/.test(n);
+		});
+		for (var i = 0; i < names.length; i++) {
+			all += await zip.file(names[i]).async("string");
+		}
+		assert.ok(/Yellow box, edited/.test(all), "the copy has the new text");
+	});
+});
+
 t.test("text editing: a plain text file in one box, saved as a copy", async function() {
 	await open(scenario({service: true}));
 	await openDoc("/media/internal/sample.txt");

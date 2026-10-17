@@ -407,17 +407,25 @@
 
 	// --- Slides ----------------------------------------------------------
 
-	function Deck(inFiles) {
+	function Deck(inFiles, inTrack) {
 		this.files = inFiles;
 		this.images = [];
 		this.imageSet = {};
 		this.cache = {};
+		// Editing: the slides' own paragraphs get ids (track.paras[id] = {el, part}).
+		this.track = inTrack || null;
+	}
+
+	//* A slide's own part (not a layout's or master's): its paragraphs can be edited.
+	function isSlidePart(inPath) {
+		return /^ppt\/slides\/[^\/]+\.xml$/.test(inPath);
 	}
 
 	Deck.prototype.xml = function(inPath) {
 		if (!this.cache.hasOwnProperty(inPath)) {
 			var t = this.files[inPath];
-			this.cache[inPath] = t ? X.parse(t) : null;
+			// When editing, a slide is parsed with offsets (see Xml.js), to change a paragraph in place.
+			this.cache[inPath] = t ? X.parse(t, {offsets: !!this.track && isSlidePart(inPath)}) : null;
 		}
 		return this.cache[inPath];
 	};
@@ -714,6 +722,10 @@
 				}
 			}
 			var block = {t: "p", h: 0, s: merge(css, base), r: runs};
+			if (this.track && inCtx.part && p.p !== undefined) {
+				block.id = this.track.paras.push({el: p, part: inCtx.part}) - 1;
+				block.pt = plainText(tokens(p));
+			}
 			// Bullets only on paragraphs with words.
 			if (runs.length && props.bullet && props.bullet !== "none") {
 				if (props.bullet === "auto") {
@@ -822,8 +834,55 @@
 		Parses a whole deck. inFiles maps zip paths to the text of every XML
 		and .rels part (pictures are not needed here).
 	*/
-	function parse(inFiles) {
-		var deck = new Deck(inFiles);
+	/**
+		A DrawingML paragraph (a:p, parsed with offsets) as the tokens TextEdit
+		works with, in the order the reader shows them:
+			{k: "t", v, s, e, run, rPr}   the text of a run (a:t's content, s..e)
+			{k: "w", v: "\n", el}         a line break (a:br)
+			{k: "o", v, el}               a field (a:fld: a slide number, a date), one piece
+		Runs without text are left out, as the reader leaves them out.
+	*/
+	function tokens(inP) {
+		var out = [];
+		var kids = X.children(inP);
+		for (var i = 0; i < kids.length; i++) {
+			var r = kids[i];
+			if (r.n === "a:r") {
+				var t = X.child(r, "a:t");
+				var v = X.textOf(t);
+				if (t && v) {
+					out.push({k: "t", v: v, s: t.ci, e: t.ce, run: r, rPr: X.child(r, "a:rPr")});
+				}
+			} else if (r.n === "a:fld") {
+				var f = X.textOf(X.child(r, "a:t"));
+				if (f) {
+					out.push({k: "o", v: f, el: r});
+				}
+			} else if (r.n === "a:br") {
+				out.push({k: "w", v: "\n", el: r});
+			}
+		}
+		return out;
+	}
+
+	function plainText(inTokens) {
+		var s = "";
+		for (var i = 0; i < inTokens.length; i++) {
+			s += inTokens[i].v;
+		}
+		return s;
+	}
+
+	/**
+		inTrack: {} to edit: track.paras then lists the slides' own paragraphs
+		by id ({el, part}), and the blocks carry id and pt (their text, as
+		tokens() gives it).
+	*/
+	function parse(inFiles, inTrack) {
+		if (inTrack) {
+			inTrack.paras = [];
+		}
+		var deck = new Deck(inFiles, inTrack);
 		var presPath = "ppt/presentation.xml";
 		var pres = deck.xml(presPath);
 		if (!pres) {
@@ -866,7 +925,7 @@
 			if (showMaster && layout) {
 				deck.shapes(layoutTree, merge(base, {rels: layoutRels, layoutTree: null}), items, true);
 			}
-			var ctx = merge(base, {rels: slideRels});
+			var ctx = merge(base, {rels: slideRels, part: slidePath});
 			deck.shapes(X.path(slide, "p:cSld", "p:spTree"), ctx, items, false);
 
 			var bg = background(slide, ctx, deck) ||
@@ -907,6 +966,9 @@
 
 	var DocPptx = {
 		parse: parse,
+		tokens: tokens,
+		plainText: plainText,
+		isSlidePart: isSlidePart,
 		coreProps: coreProps,
 		resolvePath: resolvePath,
 		colorOf: colorOf,

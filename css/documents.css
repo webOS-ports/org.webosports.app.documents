@@ -535,6 +535,18 @@ h1.doc-p, h2.doc-p, h3.doc-p, h4.doc-p, h5.doc-p, h6.doc-chunk {
 	margin: 0.3em 0;
 }
 
+/* On a slide: the box under the slide, the paragraph marked where it is. */
+.doc-slide-editor {
+	margin: 0 8px 12px;
+	padding: 8px;
+	background: #fff;
+	box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+.doc-para-editing {
+	background: rgba(255, 230, 120, 0.6);
+}
+
 .doc-para-input,
 .doc-text-input {
 	display: block;

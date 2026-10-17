@@ -258,8 +258,10 @@ var DocRender = {
 		Slides: each a box of the slide's size in CSS pixels, its items
 		placed absolutely. The viewer scales the boxes to the screen.
 	*/
-	slides: function(inParent, inSlides, inCtx) {
+	//* inFirst: the number of the first slide, less one (when one slide is drawn again).
+	slides: function(inParent, inSlides, inCtx, inFirst) {
 		var out = [];
+		var first = inFirst || 0;
 		for (var i = 0; i < inSlides.length; i++) {
 			var s = inSlides[i];
 			var frame = this.el("div", "doc-slide-frame" + (s.hidden ? " doc-slide-hidden" : ""), inParent);
@@ -275,7 +277,7 @@ var DocRender = {
 				this.slideItem(slide, s.items[k], inCtx);
 			}
 			var num = this.el("div", "doc-slide-number", frame);
-			num.appendChild(document.createTextNode(String(i + 1) + (s.hidden ? " (hidden)" : "")));
+			num.appendChild(document.createTextNode(String(first + i + 1) + (s.hidden ? " (hidden)" : "")));
 			out.push({frame: frame, slide: slide, width: s.width, height: s.height});
 		}
 		return out;

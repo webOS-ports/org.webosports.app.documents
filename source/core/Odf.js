@@ -1022,14 +1022,21 @@
 		placed items in CSS pixels: text boxes (blocks), pictures and plain
 		filled shapes. Master page decoration is not drawn.
 	*/
-	function presentation(inFiles) {
-		var loaded = loadStyles(inFiles);
+	//* inOptions.track: as text(); the slides' paragraphs get ids, edited with TextEdit.js like a text document's.
+	function presentation(inFiles, inOptions) {
+		var track = inOptions && inOptions.track;
+		var loaded = loadStyles(inFiles, !!track);
 		var styles = loaded.styles;
 		var body = X.path(loaded.content, "office:body", "office:presentation");
 		if (!body) {
 			throw new Error("ODF: no office:presentation in content.xml");
 		}
-		var b = new Builder(styles);
+		var b = new Builder(styles, track ? [] : null);
+		if (track) {
+			track.paras = b.paras;
+			track.content = loaded.content;
+			track.styles = loaded.styles;
+		}
 		var slides = [];
 		var pages = X.children(body, "draw:page");
 		for (var i = 0; i < pages.length; i++) {

@@ -168,17 +168,122 @@
 	}
 
 	/**
+		How paragraphs are written, per format. A dialect gives:
+			tokens(el), plainText(tokens)   the paragraph as text (see DocOdf.tokens)
+			text(tk, text, el)              XML for a text token's range (tk.s..tk.e) with new text
+			keep(tk, text, xml)             XML for a space run or break (its element) that kept part of its text
+			insert(xml, el, toks, at, text) {s, e, v}: new text where no run of text takes it
+	*/
+	var odfDialect = {
+		tokens: function(inEl) {
+			return Odf.tokens(inEl);
+		},
+		plainText: function(inToks) {
+			return Odf.plainText(inToks);
+		},
+		text: function(inTk, inText, inEl) {
+			return encode(inText, textPrefix(inEl.ns || {}));
+		},
+		keep: function(inTk, inText, inXml, inEl) {
+			return encode(inText, textPrefix(inEl.ns || {}));
+		},
+		// Next to objects only, or an empty paragraph: the text goes in as it is, without a run of its own.
+		insert: function(inXml, inEl, inToks, inAt, inText) {
+			var raw = encode(inText, textPrefix(inEl.ns || {}));
+			var pos = inAt;
+			if (pos === null && inEl.ci === inEl.e) {
+				// <text:p .../> becomes <text:p ...>text</text:p>.
+				var tag = inXml.slice(inEl.p, inEl.ci).replace(/\s*\/>$/, ">");
+				return {s: inEl.p, e: inEl.e, v: tag + raw + "</" + inEl.raw + ">"};
+			}
+			if (pos === null) {
+				var last = inToks[inToks.length - 1];
+				pos = last ? (last.k === "t" ? last.e : last.el.e) : inEl.ce;
+			}
+			return {s: pos, e: pos, v: raw};
+		}
+	};
+
+	/**
+		DrawingML (.pptx slides): text is in runs, a:r/a:t, kept as typed (no
+		collapsing); a line break is an a:br between runs, so a new line in a
+		run ends it and starts another with the same properties.
+	*/
+	function drawingPrefix(inEl) {
+		var i = inEl.raw.indexOf(":");
+		return i < 0 ? "" : inEl.raw.slice(0, i + 1);
+	}
+
+	function drawingRuns(inText, inPrefix, inRPr) {
+		var a = inPrefix;
+		var clean = String(inText).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffc\ufffe\uffff\r]/g, "");
+		return clean.split("\n").map(function(inPart, i) {
+			return (i ? "<" + a + "br/>" : "") + (inPart ? "<" + a + "r>" + inRPr + "<" + a + "t>" + X.escape(inPart) + "</" + a + "t></" + a + "r>" : "");
+		}).join("");
+	}
+
+	var drawingDialect = {
+		tokens: function(inEl) {
+			return Pptx().tokens(inEl);
+		},
+		plainText: function(inToks) {
+			return Pptx().plainText(inToks);
+		},
+		// Within a:t: the first line stays in this run; each line after a break gets a run like it.
+		text: function(inTk, inText, inEl, inXml) {
+			var a = drawingPrefix(inTk.run);
+			var rPr = inTk.rPr ? inXml.slice(inTk.rPr.p, inTk.rPr.e) : "";
+			var lines = String(inText).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffc\ufffe\uffff\r]/g, "").split("\n");
+			var out = X.escape(lines[0]);
+			for (var i = 1; i < lines.length; i++) {
+				out += "</" + a + "t></" + a + "r><" + a + "br/><" + a + "r>" + rPr + "<" + a + "t>" + X.escape(lines[i]);
+			}
+			return out;
+		},
+		keep: function(inTk, inText, inXml) {
+			return inText === inTk.v ? inXml.slice(inTk.el.p, inTk.el.e) : "";
+		},
+		// New runs before the token at inAt (or the paragraph's end properties), formatted as the paragraph's end.
+		insert: function(inXml, inEl, inToks, inAt, inText) {
+			var a = drawingPrefix(inEl);
+			var end = X.child(inEl, "a:endParaRPr");
+			var rPr = end ? inXml.slice(end.p, end.e).replace(/^<([\w]+:)?endParaRPr\b/, "<$1rPr").replace(/<\/([\w]+:)?endParaRPr>$/, "</$1rPr>") : "";
+			var runs = drawingRuns(inText, a, rPr);
+			if (inEl.ci === inEl.e) {
+				var tag = inXml.slice(inEl.p, inEl.ci).replace(/\s*\/>$/, ">");
+				return {s: inEl.p, e: inEl.e, v: tag + runs + "</" + inEl.raw + ">"};
+			}
+			var pos = null;
+			for (var i = 0; i < inToks.length && pos === null; i++) {
+				if (inToks[i].a >= inAt) {
+					pos = inToks[i].k === "t" ? inToks[i].run.p : inToks[i].el.p;
+				}
+			}
+			if (pos === null) {
+				pos = end ? end.p : inEl.ce;
+			}
+			return {s: pos, e: pos, v: runs};
+		}
+	};
+
+	//* Pptx.js, when it is needed (a text document's session never loads it).
+	function Pptx() {
+		return root.DocPptx || (typeof require === "function" ? require("./Pptx.js") : null);
+	}
+
+	/**
 		The splices that turn paragraph inEl (parsed with offsets, in inXml)
 		into one with inText. Returns null when the text is the same.
+		inDialect: odfDialect (the default) or drawingDialect.
 	*/
-	function splices(inXml, inEl, inText) {
-		var toks = Odf.tokens(inEl);
-		var old = Odf.plainText(toks);
+	function splices(inXml, inEl, inText, inDialect) {
+		var dialect = inDialect || odfDialect;
+		var toks = dialect.tokens(inEl);
+		var old = dialect.plainText(toks);
 		var neu = String(inText);
 		if (old === neu) {
 			return null;
 		}
-		var tp = textPrefix(inEl.ns || {});
 		var hunks = diff(old, neu);
 		// Positions of the tokens in the text.
 		var at = 0;
@@ -234,31 +339,24 @@
 				pos = Math.max(pos, Math.min(tk.b, h.e));
 			});
 			nv += tk.v.slice(pos - tk.a);
-			out.push(tk.k === "t" ? {s: tk.s, e: tk.e, v: encode(nv, tp)} : {s: tk.el.p, e: tk.el.e, v: encode(nv, tp)});
+			out.push(tk.k === "t" ? {s: tk.s, e: tk.e, v: dialect.text(tk, nv, inEl, inXml)} :
+				{s: tk.el.p, e: tk.el.e, v: dialect.keep(tk, nv, inXml, inEl)});
 		});
 		hunks.forEach(function(h) {
 			if (!h.ins || h.target) {
 				return;
 			}
-			// Next to objects only, or an empty paragraph: the text goes in as it is, without a run of its own.
-			var pos = null;
-			for (var i = 0; i < toks.length && pos === null; i++) {
-				if (toks[i].a >= h.s && toks[i].b > toks[i].a) {
-					pos = toks[i].k === "t" ? toks[i].s : toks[i].el.p;
+			if (dialect === odfDialect) {
+				var pos = null;
+				for (var i = 0; i < toks.length && pos === null; i++) {
+					if (toks[i].a >= h.s && toks[i].b > toks[i].a) {
+						pos = toks[i].k === "t" ? toks[i].s : toks[i].el.p;
+					}
 				}
+				out.push(dialect.insert(inXml, inEl, toks, pos, h.ins));
+			} else {
+				out.push(dialect.insert(inXml, inEl, toks, h.s, h.ins));
 			}
-			var raw = encode(h.ins, tp);
-			if (pos === null && inEl.ci === inEl.e) {
-				// <text:p .../> becomes <text:p ...>text</text:p>.
-				var tag = inXml.slice(inEl.p, inEl.ci).replace(/\s*\/>$/, ">");
-				out.push({s: inEl.p, e: inEl.e, v: tag + raw + "</" + inEl.raw + ">"});
-				return;
-			}
-			if (pos === null) {
-				var last = toks[toks.length - 1];
-				pos = last ? (last.k === "t" ? last.e : last.el.e) : inEl.ce;
-			}
-			out.push({s: pos, e: pos, v: raw});
 		});
 		return out;
 	}
@@ -397,7 +495,9 @@
 		},
 		encode: encode,
 		diff: diff,
-		splices: splices
+		splices: splices,
+		odfDialect: odfDialect,
+		drawingDialect: drawingDialect
 	};
 
 	if (typeof module !== "undefined" && module.exports) {

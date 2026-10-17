@@ -7,8 +7,9 @@ and Markdown. A web app in Enyo 1, like the LuneOS core apps, for the
 tablet (1024×768), tall phones (480×800) and the square Q25 (720×720).
 
 It is a viewer first: documents are shown, searched and zoomed. Word,
-OpenDocument text, workbooks, plain text and Markdown can be edited
-and saved as a new copy; the original is never changed.
+OpenDocument text, workbooks, the text of presentations, plain text and
+Markdown can be edited and saved as a new copy; the original is never
+changed.
 
 On a device
 -----------
@@ -138,6 +139,16 @@ before them. Tabs and line breaks (Enter) are kept; pictures, notes and
 fields are shown as one character each, and go when it is deleted. The
 copy is the file with only those paragraphs changed (TextEdit.js).
 Paragraphs in table rows the document repeats are not editable.
+
+**Presentations** (.pptx, .odp): the text on the slides, as in a text
+document: the pencil, then a tap on a paragraph of a slide. The box
+opens under its slide, at the page's own size (the slide stays in view,
+the paragraph marked). A copy of a .pptx is the file with only the
+edited slides' XML changed: the words that were not changed keep their
+run, a new line is a break and a run with the same properties, a field
+(a slide number) is one character. A .odp is changed as an .odt is.
+Text the master or layout draws is not the slide's and is not editable;
+boxes are not moved, and slides are not added or removed.
 
 **Word** (.docx): the pencil opens the document in SuperDoc, a .docx
 editor that runs in the page (it is large, so it is loaded on first
@@ -273,7 +284,7 @@ Code
   `Odf.js`, `Docx.js`, `Pptx.js`, `Text.js` (decoding, Markdown, CSV),
   `Sheets.js`, `SheetStream.js`, `SheetPatch.js` (edited cells into the
   workbook's own XML), `Formulas.js` (HyperFormula), `TextEdit.js`
-  (edited ODF paragraphs), `DocxCopy.js` (tidies SuperDoc's .docx),
+  (edited paragraphs: ODF, and DrawingML for .pptx slides), `DocxCopy.js` (tidies SuperDoc's .docx),
   `Engine.js` (opens a document, edits, copies), `Worker.js`,
   `Library.js` (the scan, launch targets, names).
 - `source/views/` - `DocRender.js` (model to DOM), `Finder.js`,
