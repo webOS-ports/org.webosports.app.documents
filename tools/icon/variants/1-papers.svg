@@ -1,0 +1,73 @@
+<!-- Documents icon design 1-papers: three sheets fanned out: a spreadsheet, a slide and, in front, a text page with its corner turned up, on the app plate.
+     Copyright 2026 Herman van Hazendonk <github.com@herrie.org>
+     SPDX-License-Identifier: GPL-3.0-only
+     Drawn by tools/icon/make-variants.py. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+<defs><radialGradient id="r1" cx="128" cy="129" r="121" gradientUnits="userSpaceOnUse"><stop offset="0.93" stop-color="#000" stop-opacity="0"/><stop offset="0.975" stop-color="#000" stop-opacity="0.16"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient><linearGradient id="l2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.5"/><stop offset="0.38" stop-color="#fff" stop-opacity="0.2"/><stop offset="0.62" stop-color="#fff" stop-opacity="0.03"/><stop offset="1" stop-color="#fff" stop-opacity="0.06"/></linearGradient><radialGradient id="r3" cx="128" cy="128" r="117" gradientUnits="userSpaceOnUse"><stop offset="0.55" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#fff" stop-opacity="0.22"/></radialGradient><radialGradient id="r4" cx="128" cy="222" r="92" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#000" stop-opacity="0.32"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient><radialGradient id="r5" cx="0.5" cy="0.5" r="0.62" gradientUnits="objectBoundingBox"><stop offset="0" stop-color="#000" stop-opacity="0.18"/><stop offset="0.7" stop-color="#000" stop-opacity="0.144"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient><linearGradient id="l6" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity="1"/><stop offset="1" stop-color="#e9ecef" stop-opacity="1"/></linearGradient><linearGradient id="l7" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4cb05e" stop-opacity="1"/><stop offset="1" stop-color="#2c7d3c" stop-opacity="1"/></linearGradient><radialGradient id="r8" cx="0.5" cy="0.5" r="0.62" gradientUnits="objectBoundingBox"><stop offset="0" stop-color="#000" stop-opacity="0.18"/><stop offset="0.7" stop-color="#000" stop-opacity="0.144"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient><linearGradient id="l9" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity="1"/><stop offset="1" stop-color="#e9ecef" stop-opacity="1"/></linearGradient><linearGradient id="l10" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f7a043" stop-opacity="1"/><stop offset="1" stop-color="#d4660f" stop-opacity="1"/></linearGradient><linearGradient id="l11" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f7a043" stop-opacity="1"/><stop offset="1" stop-color="#d4660f" stop-opacity="1"/></linearGradient><radialGradient id="r12" cx="0.5" cy="0.5" r="0.62" gradientUnits="objectBoundingBox"><stop offset="0" stop-color="#000" stop-opacity="0.3"/><stop offset="0.7" stop-color="#000" stop-opacity="0.24"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient><linearGradient id="l13" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity="1"/><stop offset="1" stop-color="#e9ecef" stop-opacity="1"/></linearGradient><linearGradient id="l14" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity="1"/><stop offset="0.55" stop-color="#e4e7eb" stop-opacity="1"/><stop offset="1" stop-color="#b9bfc7" stop-opacity="1"/></linearGradient></defs>
+<circle cx="128" cy="129" r="121" fill="url(#r1)"/>
+<circle cx="128" cy="128" r="117" fill="url(#l2)"/>
+<circle cx="128" cy="128" r="117" fill="url(#r3)"/>
+<circle cx="128" cy="128" r="117" fill="none" stroke="#000" stroke-opacity="0.13" stroke-width="1.5"/>
+<g transform="translate(128 126) scale(1.14) translate(-128 -128)">
+<ellipse cx="128" cy="222" rx="92" ry="92" fill="url(#r4)" transform="translate(128 222) scale(1 0.15217391304347827) translate(-128 -222)"/>
+<g transform="rotate(-15 128 232)">
+<rect x="67.5" y="37.0" width="126" height="162" rx="14" fill="url(#r5)"/>
+<rect x="72.0" y="40" width="112" height="148" rx="3" fill="url(#l6)" stroke="#aeb4bc" stroke-width="1.2"/>
+<rect x="82.0" y="52" width="92" height="12" rx="2" fill="url(#l7)"/>
+<rect x="82.0" y="64" width="31.3" height="104" fill="#e2f1e4"/>
+<line x1="82.0" y1="64" x2="174.0" y2="64" stroke="#b9d5bd" stroke-width="1"/>
+<line x1="82.0" y1="77" x2="174.0" y2="77" stroke="#b9d5bd" stroke-width="1"/>
+<line x1="82.0" y1="90" x2="174.0" y2="90" stroke="#b9d5bd" stroke-width="1"/>
+<line x1="82.0" y1="103" x2="174.0" y2="103" stroke="#b9d5bd" stroke-width="1"/>
+<line x1="82.0" y1="116" x2="174.0" y2="116" stroke="#b9d5bd" stroke-width="1"/>
+<line x1="82.0" y1="129" x2="174.0" y2="129" stroke="#b9d5bd" stroke-width="1"/>
+<line x1="82.0" y1="142" x2="174.0" y2="142" stroke="#b9d5bd" stroke-width="1"/>
+<line x1="82.0" y1="155" x2="174.0" y2="155" stroke="#b9d5bd" stroke-width="1"/>
+<line x1="82.0" y1="168" x2="174.0" y2="168" stroke="#b9d5bd" stroke-width="1"/>
+<line x1="113.3" y1="52" x2="113.3" y2="168" stroke="#b9d5bd" stroke-width="1"/>
+<line x1="143.6" y1="52" x2="143.6" y2="168" stroke="#b9d5bd" stroke-width="1"/>
+<rect x="130.0" y="68.5" width="10.6" height="4" rx="2" fill="#7f8a96"/>
+<rect x="151.3" y="68.5" width="19.7" height="4" rx="2" fill="#7f8a96"/>
+<rect x="123.9" y="81.5" width="16.7" height="4" rx="2" fill="#7f8a96"/>
+<rect x="160.4" y="81.5" width="10.6" height="4" rx="2" fill="#7f8a96"/>
+<rect x="117.9" y="94.5" width="22.8" height="4" rx="2" fill="#7f8a96"/>
+<rect x="154.3" y="94.5" width="16.7" height="4" rx="2" fill="#7f8a96"/>
+<rect x="127.0" y="107.5" width="13.7" height="4" rx="2" fill="#7f8a96"/>
+<rect x="148.2" y="107.5" width="22.8" height="4" rx="2" fill="#7f8a96"/>
+<rect x="120.9" y="120.5" width="19.7" height="4" rx="2" fill="#7f8a96"/>
+<rect x="157.3" y="120.5" width="13.7" height="4" rx="2" fill="#7f8a96"/>
+<rect x="130.0" y="133.5" width="10.6" height="4" rx="2" fill="#7f8a96"/>
+<rect x="151.3" y="133.5" width="19.7" height="4" rx="2" fill="#7f8a96"/>
+<rect x="123.9" y="146.5" width="16.7" height="4" rx="2" fill="#7f8a96"/>
+<rect x="160.4" y="146.5" width="10.6" height="4" rx="2" fill="#7f8a96"/>
+<rect x="117.9" y="159.5" width="22.8" height="4" rx="2" fill="#7f8a96"/>
+<rect x="154.3" y="159.5" width="16.7" height="4" rx="2" fill="#7f8a96"/>
+</g>
+<g transform="rotate(15 128 232)">
+<rect x="67.5" y="37.0" width="126" height="162" rx="14" fill="url(#r8)"/>
+<rect x="72.0" y="40" width="112" height="148" rx="3" fill="url(#l9)" stroke="#aeb4bc" stroke-width="1.2"/>
+<rect x="82.0" y="52" width="92" height="15" rx="2" fill="url(#l10)"/>
+<rect x="88.0" y="57" width="46.0" height="5" rx="2.5" fill="#fff"/>
+<circle cx="111.44" cy="105.38" r="24.7752" fill="#f8cf9f"/>
+<path d="M111.44,105.38 L111.4,80.6 A24.7752,24.7752 0 0 1 130.4,121.3 Z" fill="url(#l11)"/>
+<rect x="139.04" y="88.0" width="27.6" height="4" rx="2" fill="#99a1ab"/>
+<rect x="139.04" y="105.4" width="27.6" height="4" rx="2" fill="#99a1ab"/>
+<rect x="139.04" y="122.7" width="27.6" height="4" rx="2" fill="#99a1ab"/>
+</g>
+<g>
+<rect x="67.5" y="47.0" width="126" height="162" rx="14" fill="url(#r12)"/>
+<path d="M75.0,50 H181.0 Q184.0,50 184.0,53 V172 L158.0,198 H75.0 Q72.0,198 72.0,195 V53 Q72.0,50 75.0,50 Z" fill="url(#l13)" stroke="#aeb4bc" stroke-width="1.2"/>
+<rect x="84.0" y="64" width="52.8" height="7" rx="3.5" fill="#2459b2"/>
+<rect x="84.0" y="79" width="88.0" height="4.2" rx="2.1" fill="#99a1ab"/>
+<rect x="84.0" y="89.5" width="81.0" height="4.2" rx="2.1" fill="#99a1ab"/>
+<rect x="84.0" y="100.0" width="88.0" height="4.2" rx="2.1" fill="#99a1ab"/>
+<rect x="84.0" y="110.5" width="88.0" height="4.2" rx="2.1" fill="#99a1ab"/>
+<rect x="84.0" y="121.0" width="81.0" height="4.2" rx="2.1" fill="#99a1ab"/>
+<rect x="84.0" y="131.5" width="88.0" height="4.2" rx="2.1" fill="#99a1ab"/>
+<rect x="84.0" y="142.0" width="88.0" height="4.2" rx="2.1" fill="#99a1ab"/>
+<rect x="84.0" y="152.5" width="81.0" height="4.2" rx="2.1" fill="#99a1ab"/>
+<rect x="84.0" y="163.0" width="59.8" height="4.2" rx="2.1" fill="#99a1ab"/>
+<path d="M158.0,198 Q169.7,188.9 167.88,173.3 Q181.4,181.88 184.0,172 Z" fill="url(#l14)" stroke="#a3aab3" stroke-width="1"/>
+</g>
+</g>
+</svg>

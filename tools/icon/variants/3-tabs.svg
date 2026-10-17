@@ -1,0 +1,44 @@
+<!-- Documents icon design 3-tabs: a text page with a table, tilted, with blue, green and orange index tabs, on the app plate.
+     Copyright 2026 Herman van Hazendonk <github.com@herrie.org>
+     SPDX-License-Identifier: GPL-3.0-only
+     Drawn by tools/icon/make-variants.py. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+<defs><radialGradient id="r1" cx="128" cy="129" r="121" gradientUnits="userSpaceOnUse"><stop offset="0.93" stop-color="#000" stop-opacity="0"/><stop offset="0.975" stop-color="#000" stop-opacity="0.16"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient><linearGradient id="l2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.5"/><stop offset="0.38" stop-color="#fff" stop-opacity="0.2"/><stop offset="0.62" stop-color="#fff" stop-opacity="0.03"/><stop offset="1" stop-color="#fff" stop-opacity="0.06"/></linearGradient><radialGradient id="r3" cx="128" cy="128" r="117" gradientUnits="userSpaceOnUse"><stop offset="0.55" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#fff" stop-opacity="0.22"/></radialGradient><radialGradient id="r4" cx="124" cy="224" r="90" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#000" stop-opacity="0.32"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient><linearGradient id="l5" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#4a8fe6" stop-opacity="1"/><stop offset="1" stop-color="#2459b2" stop-opacity="1"/></linearGradient><linearGradient id="l6" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#4cb05e" stop-opacity="1"/><stop offset="1" stop-color="#2c7d3c" stop-opacity="1"/></linearGradient><linearGradient id="l7" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#f7a043" stop-opacity="1"/><stop offset="1" stop-color="#d4660f" stop-opacity="1"/></linearGradient><radialGradient id="r8" cx="0.5" cy="0.5" r="0.62" gradientUnits="objectBoundingBox"><stop offset="0" stop-color="#000" stop-opacity="0.3"/><stop offset="0.7" stop-color="#000" stop-opacity="0.24"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient><linearGradient id="l9" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity="1"/><stop offset="1" stop-color="#e9ecef" stop-opacity="1"/></linearGradient><linearGradient id="l10" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4cb05e" stop-opacity="1"/><stop offset="1" stop-color="#2c7d3c" stop-opacity="1"/></linearGradient><linearGradient id="l11" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity="1"/><stop offset="0.55" stop-color="#e4e7eb" stop-opacity="1"/><stop offset="1" stop-color="#b9bfc7" stop-opacity="1"/></linearGradient></defs>
+<circle cx="128" cy="129" r="121" fill="url(#r1)"/>
+<circle cx="128" cy="128" r="117" fill="url(#l2)"/>
+<circle cx="128" cy="128" r="117" fill="url(#r3)"/>
+<circle cx="128" cy="128" r="117" fill="none" stroke="#000" stroke-opacity="0.13" stroke-width="1.5"/>
+<g transform="translate(128 126) scale(1.14) translate(-128 -128)">
+<ellipse cx="124" cy="224" rx="90" ry="90" fill="url(#r4)" transform="translate(124 224) scale(1 0.14444444444444443) translate(-124 -224)"/>
+<g transform="rotate(-5 128 128)">
+<rect x="174.0" y="60" width="40" height="32" rx="6" fill="url(#l5)" stroke="#2459b2" stroke-width="1"/>
+<rect x="196.0" y="69.0" width="12" height="3" rx="1.5" fill="#fff"/>
+<rect x="196.0" y="74.5" width="12" height="3" rx="1.5" fill="#fff"/>
+<rect x="196.0" y="80.0" width="8" height="3" rx="1.5" fill="#fff"/>
+<rect x="174.0" y="100" width="40" height="32" rx="6" fill="url(#l6)" stroke="#2c7d3c" stroke-width="1"/>
+<rect x="196.0" y="108" width="13" height="14" fill="none" stroke="#fff" stroke-width="2"/><line x1="196.0" y1="115" x2="209.0" y2="115" stroke="#fff" stroke-width="2"/><line x1="202.5" y1="108" x2="202.5" y2="122" stroke="#fff" stroke-width="2"/>
+<rect x="174.0" y="140" width="40" height="32" rx="6" fill="url(#l7)" stroke="#d4660f" stroke-width="1"/>
+<circle cx="202.5" cy="155" r="7" fill="#fff" fill-opacity="0.5"/><path d="M202.5,155 V148 A7,7 0 0 1 209.2,157 Z" fill="#fff"/>
+<rect x="55.5" y="35.0" width="142" height="178" rx="14" fill="url(#r8)"/>
+<path d="M63.0,38 H185.0 Q188.0,38 188.0,41 V174 L160.0,202 H63.0 Q60.0,202 60.0,199 V41 Q60.0,38 63.0,38 Z" fill="url(#l9)" stroke="#aeb4bc" stroke-width="1.2"/>
+<rect x="74.0" y="54" width="60.0" height="7" rx="3.5" fill="#2459b2"/>
+<rect x="74.0" y="69" width="100.0" height="4.2" rx="2.1" fill="#99a1ab"/>
+<rect x="74.0" y="79.5" width="92.0" height="4.2" rx="2.1" fill="#99a1ab"/>
+<rect x="74.0" y="90.0" width="100.0" height="4.2" rx="2.1" fill="#99a1ab"/>
+<rect x="74.0" y="100.5" width="100.0" height="4.2" rx="2.1" fill="#99a1ab"/>
+<rect x="74.0" y="111.0" width="68.0" height="4.2" rx="2.1" fill="#99a1ab"/>
+<rect x="74.0" y="136" width="88" height="12" rx="2" fill="url(#l10)"/>
+<rect x="74.0" y="148" width="29.9" height="26" fill="#e2f1e4"/>
+<line x1="74.0" y1="148" x2="162.0" y2="148" stroke="#b9d5bd" stroke-width="1"/>
+<line x1="74.0" y1="161" x2="162.0" y2="161" stroke="#b9d5bd" stroke-width="1"/>
+<line x1="74.0" y1="174" x2="162.0" y2="174" stroke="#b9d5bd" stroke-width="1"/>
+<line x1="103.9" y1="136" x2="103.9" y2="174" stroke="#b9d5bd" stroke-width="1"/>
+<line x1="133.0" y1="136" x2="133.0" y2="174" stroke="#b9d5bd" stroke-width="1"/>
+<rect x="119.8" y="152.5" width="10.2" height="4" rx="2" fill="#7f8a96"/>
+<rect x="140.1" y="152.5" width="18.9" height="4" rx="2" fill="#7f8a96"/>
+<rect x="114.0" y="165.5" width="16.0" height="4" rx="2" fill="#7f8a96"/>
+<rect x="148.8" y="165.5" width="10.2" height="4" rx="2" fill="#7f8a96"/>
+<path d="M160.0,202 Q172.6,192.2 170.64,175.4 Q185.2,184.64 188.0,174 Z" fill="url(#l11)" stroke="#a3aab3" stroke-width="1"/>
+</g>
+</g>
+</svg>

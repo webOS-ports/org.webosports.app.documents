@@ -208,6 +208,13 @@ device tests.
 The app needs `trustLevel: "trusted"` (appinfo.json): WAM lets only
 trusted apps read files outside their own folder.
 
+The icon is `images/icon.svg`; `node tools/render-icon.js` renders
+`icon.png` and `icon-256x256.png` from it. It is one of three designs in
+the legacy app icon style, all drawn by `tools/icon/make-variants.py`
+into `tools/icon/variants/` (fanned papers, pocket folders, a page with
+index tabs); the folders were chosen. The SVGs use no filters, so Qt's
+renderer, which the launcher uses, draws them as a browser does.
+
 Code
 ----
 
