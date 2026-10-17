@@ -83,6 +83,13 @@ echo
 $ADB forward tcp:$PORT tcp:9998 >/dev/null
 trap '$ADB forward --remove tcp:$PORT >/dev/null 2>&1 || true' EXIT
 
+# Screen on, and kept on: a screen that dims or locks puts the app into card
+# view, and the screenshots then show the card, not the app.
+$ADB shell "luna-send -n 1 -w 3000 luna://com.palm.display/control/setState '{\"state\":\"on\"}' > /dev/null 2>&1"
+$ADB shell "while true; do luna-send -n 1 -w 3000 luna://com.palm.display/control/notifyUserActivity '{}' > /dev/null 2>&1; sleep 15; done" &
+AWAKE=$!
+trap '$ADB forward --remove tcp:$PORT >/dev/null 2>&1 || true; kill $AWAKE 2>/dev/null || true; $ADB shell "pkill -f notifyUserActivity" >/dev/null 2>&1 || true' EXIT
+
 RC=0
 DEVICE_SERIAL="$SERIAL" APP_ID="$ID" DEVICE_DEBUG=http://127.0.0.1:$PORT DEVICE_NAME="$NAME" node tools/tests/device-tests.js || RC=$?
 
