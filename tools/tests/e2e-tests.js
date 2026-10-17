@@ -99,7 +99,12 @@ function scenario(inOptions) {
 		"luna://org.webosports.app.documents.service/info": o.service ? {json: {id: "org.webosports.app.documents.service"}} :
 			{error: {errorCode: -1, errorText: "Service does not exist: org.webosports.app.documents.service."}},
 		"luna://org.webosports.app.documents.service/writeNew": o.service ? {json: {path: "x", bytes: 1}} :
-			{error: {errorCode: -1, errorText: "Service does not exist"}}
+			{error: {errorCode: -1, errorText: "Service does not exist"}},
+		// LibreOffice's service: asked without a document it says badRequest; legacy.doc becomes sample.odt.
+		"luna://org.webosports.service.office/convert": o.office ? {cases: [
+			{when: {source: "/media/internal/legacy.doc", format: "odt"}, json: {target: "/media/internal/sample.odt", format: "odt", cached: false}}
+		], error: {errorCode: "badRequest", errorText: "source and format are required"}} :
+			{error: {errorCode: -1, errorText: "Service does not exist: org.webosports.service.office."}}
 	};
 	Object.assign(luna, o.luna || {});
 	return {
@@ -553,11 +558,203 @@ t.test("sheet editing: an existing name is reported, nothing is overwritten", as
 	assert.ok(await page.eval("documentsApp.$.saveDialog.isOpen"), "the dialog stays for another name");
 });
 
+t.test("sheet editing: a formula's result and the results that use the edited cell are shown at once", async function() {
+	await open(scenario({service: true}));
+	await openDoc("/media/internal/sample.xlsx");
+	await page.waitFor("documentsApp.$.viewer.$.sheet.$.editButton.showing");
+	// Prices: B2 1.5, C2 4, D2 =B2*C2, D5 =SUM(D2:D4).
+	await page.eval("var s=documentsApp.$.viewer.$.sheet; s.$.grid.select(1,1); s.startEdit(); s.$.editor.setValue('2'); s.commitEdit(); 1");
+	await page.waitFor("documentsApp.$.viewer.$.sheet.currentSheet().text[1][3] === '8'", 15000);
+	assert.strictEqual(await page.eval("documentsApp.$.viewer.$.sheet.currentSheet().text[4][3]"), "62.5");
+	await page.eval("var s=documentsApp.$.viewer.$.sheet; s.$.grid.select(6,0); s.startEdit(); s.$.editor.setValue('=B2*10'); s.commitEdit(); 1");
+	await page.waitFor("documentsApp.$.viewer.$.sheet.currentSheet().text[6][0] === '20'", 15000);
+	if (SHOTS) {
+		await page.screenshot(path.join(OUT, "shots", "edit-xlsx.png"));
+	}
+	await page.waitFor("/62\\.5/.test(document.querySelector('.sheet-cells').textContent)");
+	assert.strictEqual(await page.eval("documentsApp.$.viewer.$.sheet.cellSource(documentsApp.$.viewer.$.sheet.currentSheet(), 6, 0)"), "=B2*10",
+		"the cell bar shows the formula");
+	await page.eval("documentsApp.$.viewer.saveCopy(); 1");
+	await page.waitFor("documentsApp.$.saveDialog.isOpen");
+	assert.ok(!/not the formatting/.test(await page.eval("documentsApp.$.saveNote.content")), "an .xlsx copy keeps the formatting");
+	await page.eval("documentsApp.doSave(); 1");
+	await page.waitFor("!documentsApp.$.saveDialog.isOpen", 10000);
+	var w = await calls("luna", "service/writeNew");
+	var ws = XLSX.read(Buffer.from(w[0].params.data, "base64"), {type: "buffer", cellFormula: true}).Sheets.Prices;
+	assert.strictEqual(ws.D2.v, 8);
+	assert.strictEqual(ws.A7.f, "B2*10");
+	assert.strictEqual(ws.A7.v, 20);
+});
+
+t.test("sheet editing: the 123 key makes the cell editor a field for digits (a keypad's), and it is remembered", async function() {
+	await open(scenario({service: true}));
+	await openDoc("/media/internal/sample.xlsx");
+	await page.waitFor("documentsApp.$.viewer.$.sheet.$.editButton.showing");
+	await page.eval("var s=documentsApp.$.viewer.$.sheet; s.$.grid.select(6,0); s.startEdit(); s.$.editor.setValue('12'); 1");
+	await page.waitFor("documentsApp.$.viewer.$.sheet.$.digitsButton.showing");
+	assert.strictEqual(await page.eval("document.querySelector('.sheet-editor input').type"), "text");
+	await page.tap(".sheet-digits-button");
+	assert.strictEqual(await page.eval("document.querySelector('.sheet-editor input').type"), "tel");
+	assert.strictEqual(await page.eval("documentsApp.$.viewer.$.sheet.$.editor.getValue()"), "12", "what was typed stays");
+	assert.strictEqual(await page.eval("localStorage.getItem('documents.cellDigits')"), "1");
+	await page.eval("documentsApp.$.viewer.$.sheet.commitEdit(); 1");
+	assert.strictEqual(await page.eval("documentsApp.$.viewer.$.sheet.$.digitsButton.showing"), false, "only while editing");
+});
+
+t.test("text editing: not offered without the app's service", async function() {
+	await open(scenario());
+	await openDoc("/media/internal/sample.odt");
+	await page.eval("new Promise(function(r){setTimeout(r, 500);})");
+	assert.strictEqual(await page.eval("documentsApp.$.viewer.$.editButton.showing"), false);
+});
+
+t.test("text editing: a tapped paragraph is edited in place and saved as a copy of the .odt", async function() {
+	await open(scenario({service: true}));
+	await openDoc("/media/internal/sample.odt");
+	await page.waitFor("documentsApp.$.viewer.$.editButton.showing");
+	await page.eval("documentsApp.$.viewer.toggleEdit(); 1");
+	await page.waitFor("document.querySelector('.doc-editing [data-pid]')");
+	var pid = await page.eval("Array.prototype.filter.call(document.querySelectorAll('[data-pid]'), function(x){return /bold words/.test(x.textContent);})[0].getAttribute('data-pid')");
+	await page.tap("[data-pid='" + pid + "']");
+	await page.waitFor("document.querySelector('.doc-para-input')");
+	assert.strictEqual(await page.eval("document.querySelector('.doc-para-input').value"), "Plain, bold words and red underlined text, E=mc2.");
+	if (SHOTS) {
+		await page.screenshot(path.join(OUT, "shots", "edit-odt.png"));
+	}
+	await page.eval("var a=document.querySelector('.doc-para-input'); a.value='Plain, very bold words and red underlined text, E=mc2!'; 1");
+	await page.tap(".doc-para-done");
+	await page.waitFor("!document.querySelector('.doc-para-input') && /very bold/.test(document.querySelector('.viewer-content').textContent)", 10000);
+	// The bold run is still bold: the paragraph was built again from the edited document.
+	assert.ok(await page.eval("Array.prototype.some.call(document.querySelectorAll('[data-pid] span'), function(s){return s.textContent==='bold words' && /bold|700/.test(s.style.fontWeight);})"));
+	await page.waitFor("documentsApp.$.viewer.$.saveButton.showing");
+	// Back leaves edit mode first.
+	await page.eval("documentsApp.$.viewer.back(); 1");
+	assert.strictEqual(await page.eval("documentsApp.$.viewer.editMode"), false);
+	await page.tap(".viewer-save");
+	await page.waitFor("documentsApp.$.saveDialog.isOpen");
+	assert.strictEqual(await page.eval("documentsApp.$.saveName.getValue()"), "sample (edited).odt");
+	await page.eval("documentsApp.doSave(); 1");
+	await page.waitFor("!documentsApp.$.saveDialog.isOpen", 10000);
+	var w = await calls("luna", "service/writeNew");
+	assert.strictEqual(w.length, 1);
+	assert.strictEqual(w[0].params.path, "/media/internal/sample (edited).odt");
+	var JSZip = require(path.join(ROOT, "lib/jszip/jszip.min.js"));
+	var zip = await JSZip.loadAsync(Buffer.from(w[0].params.data, "base64"));
+	var content = await zip.file("content.xml").async("string");
+	assert.ok(/Plain, very <text:span text:style-name="T1">bold words<\/text:span>/.test(content), "the bold run is kept");
+	assert.ok(zip.file("Pictures/") !== undefined || Object.keys(zip.files).some(function(n) {
+		return /^Pictures\//.test(n);
+	}), "the pictures are in the copy");
+});
+
+t.test("text editing: a plain text file in one box, saved as a copy", async function() {
+	await open(scenario({service: true}));
+	await openDoc("/media/internal/sample.txt");
+	await page.waitFor("documentsApp.$.viewer.$.editButton.showing");
+	await page.eval("documentsApp.$.viewer.toggleEdit(); 1");
+	await page.waitFor("document.querySelector('.doc-text-input')");
+	await page.eval("var a=document.querySelector('.doc-text-input'); a.value='Edited\\n' + a.value; a.dispatchEvent(new Event('input')); 1");
+	await page.waitFor("documentsApp.$.viewer.$.saveButton.showing");
+	await page.eval("documentsApp.$.viewer.toggleEdit(); 1");
+	await page.waitFor("!document.querySelector('.doc-text-input') && /^Edited/.test(document.querySelector('.doc-plaintext').textContent)");
+	await page.eval("documentsApp.$.viewer.saveCopy(); 1");
+	await page.waitFor("documentsApp.$.saveDialog.isOpen");
+	assert.strictEqual(await page.eval("documentsApp.$.saveName.getValue()"), "sample (edited).txt");
+	await page.eval("documentsApp.doSave(); 1");
+	await page.waitFor("!documentsApp.$.saveDialog.isOpen", 10000);
+	var w = await calls("luna", "service/writeNew");
+	var saved = Buffer.from(w[0].params.data, "base64").toString("utf8");
+	assert.ok(/^Edited\n/.test(saved), saved.slice(0, 40));
+	assert.ok(saved.indexOf(fs.readFileSync(path.join(FIX, "sample.txt"), "utf8").slice(0, 20)) > 0, "the rest of the text");
+});
+
+t.test("word editing: the .docx editor, its own toolbar keys, and a copy without the editor's stamps", async function() {
+	await open(scenario({service: true}));
+	await openDoc("/media/internal/sample.docx");
+	await page.waitFor("documentsApp.$.viewer.$.editButton.showing");
+	await page.tap(".viewer-toolbar .viewer-tool:last-child");
+	await page.waitFor("documentsApp.$.viewer.$.docx.isOpen() && documentsApp.$.viewer.$.docx.showing && documentsApp.$.viewer.editMode", 60000);
+	assert.ok(/Fixture heading/.test(await text(".docx-editor-host")));
+	assert.strictEqual(await page.eval("documentsApp.$.viewer.$.findButton.disabled"), true, "find is the editor's while it is open");
+	// Type at the start, then make a word bold with the bar's key.
+	await page.eval("(function(){var e=documentsApp.$.viewer.$.docx.superdoc.activeEditor; e.commands.setTextSelection({from: 3, to: 3}); " +
+		"e.commands.insertContent('Edited '); e.commands.setTextSelection({from: 3, to: 9}); return 1;})()");
+	await page.tap(".docx-b");
+	await page.waitFor("documentsApp.$.viewer.$.saveButton.showing");
+	if (SHOTS) {
+		await page.screenshot(path.join(OUT, "shots", "edit-docx.png"));
+	}
+	await page.tap(".viewer-save");
+	await page.waitFor("documentsApp.$.saveDialog.isOpen");
+	assert.strictEqual(await page.eval("documentsApp.$.saveName.getValue()"), "sample (edited).docx");
+	await page.eval("documentsApp.doSave(); 1");
+	await page.waitFor("!documentsApp.$.saveDialog.isOpen", 20000);
+	var w = await calls("luna", "service/writeNew");
+	assert.strictEqual(w[0].params.path, "/media/internal/sample (edited).docx");
+	var JSZip = require(path.join(ROOT, "lib/jszip/jszip.min.js"));
+	var zip = await JSZip.loadAsync(Buffer.from(w[0].params.data, "base64"));
+	var doc = await zip.file("word/document.xml").async("string");
+	assert.ok(/Edited/.test(doc), "the typed text is in the copy");
+	assert.ok(/<w:b\/>|<w:b /.test(doc), "and the bold");
+	assert.ok(/Plain, /.test(doc), "and the rest of the document");
+	assert.strictEqual(zip.file("docProps/custom.xml"), null, "no editor stamps");
+	// Back: read only first, the editor stays.
+	await page.eval("documentsApp.$.viewer.back(); 1");
+	assert.strictEqual(await page.eval("documentsApp.$.viewer.editMode"), false);
+	assert.strictEqual(await page.eval("documentsApp.$.viewer.$.docx.$.bar.showing"), false);
+});
+
+t.test("word editing on a phone: the page fits the screen, the zoom keys work the editor's zoom", async function() {
+	await open(scenario({service: true}), {width: 480, height: 800});
+	await openDoc("/media/internal/sample.docx");
+	await page.waitFor("documentsApp.$.viewer.$.editButton.showing");
+	await page.eval("documentsApp.$.viewer.toggleEdit(); 1");
+	await page.waitFor("documentsApp.$.viewer.$.docx.isOpen() && documentsApp.$.viewer.editMode", 60000);
+	await page.waitFor("documentsApp.$.viewer.$.docx.zoomPercent() < 100", 10000);
+	var m = await page.eval("({doc: document.documentElement.scrollWidth, bar: document.querySelector('.docx-editor-bar').scrollWidth, " +
+		"label: documentsApp.$.viewer.$.zoomLabel.caption, zoom: documentsApp.$.viewer.$.docx.zoomPercent()})");
+	assert.ok(m.doc <= 480 && m.bar <= 480, JSON.stringify(m));
+	assert.strictEqual(m.label, m.zoom + "%", "the label shows the editor's zoom");
+	await page.eval("documentsApp.$.viewer.zoomIn(); 1");
+	await page.waitFor("documentsApp.$.viewer.$.docx.zoomPercent() > " + m.zoom);
+	if (SHOTS) {
+		await page.screenshot(path.join(OUT, "shots", "edit-docx-phone.png"));
+	}
+});
+
+t.test("conversion: with LibreOffice's service a .doc is listed, converted and shown under its own name", async function() {
+	await open(scenario({service: true, office: true}));
+	await page.waitFor("FileTypes.converter === true", 10000);
+	var names = await libraryNames();
+	assert.ok(names.indexOf("legacy.doc") >= 0, "a .doc is listed: " + names.join(", "));
+	assert.strictEqual(await openDoc("/media/internal/legacy.doc"), "odt");
+	assert.ok(/Fixture heading/.test(await text(".viewer-content")));
+	assert.strictEqual(await page.eval("documentsApp.$.viewer.$.title.content"), "legacy.doc");
+	assert.ok(/Word 97-2003 document, converted by LibreOffice/.test(await page.eval("documentsApp.$.viewer.$.subtitle.content")));
+	var c = await calls("luna", "service.office/convert");
+	assert.ok(c.some(function(x) {
+		return x.params.source === "/media/internal/legacy.doc" && x.params.format === "odt" && x.acg === "granted";
+	}), JSON.stringify(c));
+	// A copy goes next to the .doc, as OpenDocument.
+	await page.eval("documentsApp.$.viewer.saveCopy(); 1");
+	await page.waitFor("documentsApp.$.saveDialog.isOpen");
+	assert.strictEqual(await page.eval("documentsApp.$.saveName.getValue()"), "legacy (edited).odt");
+});
+
+t.test("conversion: without the service a .doc is not listed, and opened it says why", async function() {
+	await open(scenario());
+	await libraryNames();
+	assert.strictEqual(await page.eval("FileTypes.converter"), false);
+	assert.strictEqual(await openDoc("/media/internal/legacy.doc"), "error");
+	assert.ok(/binary format from before 2007/.test(await page.eval("documentsApp.$.viewer.$.statusText.content")));
+});
+
 // --- Layouts ------------------------------------------------------------------------
 
 [["tablet", 1024, 768], ["phone", 480, 800], ["square", 450, 380]].forEach(function(inSize) {
 	t.test("layout " + inSize[0] + " " + inSize[1] + "x" + inSize[2] + ": nothing wider than the screen, tools fit", async function() {
-		await open(scenario(), {width: inSize[1], height: inSize[2]});
+		// With the service, so the edit tool is in the toolbar too.
+		await open(scenario({service: true}), {width: inSize[1], height: inSize[2]});
 		await libraryNames();
 		var lib = await page.eval("({doc: document.documentElement.scrollWidth, toolbar: document.querySelector('.library-toolbar').scrollWidth})");
 		assert.ok(lib.doc <= inSize[1] && lib.toolbar <= inSize[1], JSON.stringify(lib));
@@ -568,6 +765,7 @@ t.test("sheet editing: an existing name is reported, nothing is overwritten", as
 			"return t>inner+0.5;}).map(function(b){return b.textContent;})");
 		assert.deepStrictEqual(clipped, [], "filter captions fit");
 		await openDoc("/media/internal/sample.odt");
+		await page.waitFor("documentsApp.$.viewer.$.editButton.showing");
 		var reflow = await page.eval("documentsApp.$.viewer.reflow");
 		assert.strictEqual(reflow, inSize[1] < 700, "phones read reflowed text");
 		var m = await page.eval("({page: document.querySelector('.doc-page').getBoundingClientRect().right, tools: document.querySelector('.viewer-toolbar').scrollWidth, " +

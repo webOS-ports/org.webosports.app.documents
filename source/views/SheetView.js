@@ -4,7 +4,9 @@
 
 	Editing is light: a value, a number or a formula per cell. Edits are
 	kept as a list; "Save a copy" (in the viewer) writes them into a new
-	file and never over the original.
+	file and never over the original. Each edit goes to the engine, which
+	works the formulas out again: the cell and every formula that uses it
+	show their new values.
 */
 enyo.kind({
 	name: "SheetView",
@@ -23,6 +25,10 @@ enyo.kind({
 			{name: "value", flex: 1, className: "sheet-value", content: ""},
 			{name: "editor", kind: "Input", flex: 1, className: "sheet-editor", showing: false,
 				autoCapitalize: "lowercase", autocorrect: false, spellcheck: false, autoWordComplete: false, onkeypress: "editorKey"},
+			// Digits or letters from a phone's keypad: a "tel" field gets the digits printed on the keys, a text field
+			// cycles through their letters (T9). Remembered for the next cell and the next start.
+			{name: "digitsButton", kind: "Button", className: "sheet-digits-button", caption: "123", showing: false,
+				onclick: "toggleDigits"},
 			{name: "editButton", kind: "Button", className: "enyo-button-dark sheet-edit-button", caption: $L("Edit"), onclick: "startEdit"},
 			{name: "doneButton", kind: "Button", className: "enyo-button-affirmative sheet-edit-button", caption: $L("Done"),
 				showing: false, onclick: "commitEdit"}
@@ -39,6 +45,28 @@ enyo.kind({
 		this.sheetIndex = 0;
 		this.edits = [];
 		this.editing = false;
+		this.digits = false;
+		try {
+			this.digits = localStorage.getItem("documents.cellDigits") === "1";
+		} catch (e) {}
+		this.digitsChanged();
+	},
+
+	//* The cell editor as a field for digits, or for text.
+	digitsChanged: function() {
+		this.$.editor.setInputType(this.digits ? "tel" : "");
+		this.$.digitsButton.setCaption(this.digits ? "abc" : "123");
+	},
+
+	toggleDigits: function() {
+		var value = this.$.editor.getValue();
+		this.digits = !this.digits;
+		try {
+			localStorage.setItem("documents.cellDigits", this.digits ? "1" : "0");
+		} catch (e) {}
+		this.digitsChanged();
+		this.$.editor.setValue(value);
+		this.$.editor.forceFocus();
 	},
 
 	//* inModel: DocSheets model; inEditable: false for formats that cannot be saved.
@@ -133,6 +161,7 @@ enyo.kind({
 		this.$.value.hide();
 		this.$.editButton.hide();
 		this.$.editor.show();
+		this.$.digitsButton.show();
 		this.$.doneButton.show();
 		this.$.editor.setValue(this.cellSource(sheet, this.selected.r, this.selected.c));
 		this.$.editor.forceFocus();
@@ -161,6 +190,7 @@ enyo.kind({
 		}
 		this.editing = false;
 		this.$.editor.hide();
+		this.$.digitsButton.hide();
 		this.$.doneButton.hide();
 		this.$.value.show();
 		this.$.editButton.setShowing(this.editable);
@@ -183,7 +213,7 @@ enyo.kind({
 			sheet.text[sel.r] = [];
 			sheet.kinds[sel.r] = [];
 		}
-		// Shown as typed: there is no formula engine, so a formula shows its formula until saved and reopened.
+		// Shown as typed until the engine has worked it out (a formula without it shows as typed).
 		sheet.text[sel.r][sel.c] = p.t === "z" ? "" : text;
 		sheet.kinds[sel.r][sel.c] = p.t === "n" ? "n" : "s";
 		if (p.f) {
@@ -197,10 +227,44 @@ enyo.kind({
 		if (sel.c >= sheet.cols) {
 			sheet.cols = sel.c + 1;
 		}
-		this.edits.push({sheet: sheet.index, r: sel.r, c: sel.c, text: text});
+		var edit = {sheet: sheet.index, r: sel.r, c: sel.c, text: text};
+		this.edits.push(edit);
 		this.$.grid.refresh();
 		this.$.value.setContent(enyo.string.escapeHtml(text));
 		this.doDirty(this.edits.length);
+		var model = this.model, self = this;
+		DocLoader.edit({cell: edit}, function(inErr, inResult) {
+			if (!inErr && self.model === model && inResult) {
+				self.showValues(inResult.cells || []);
+			}
+		});
+	},
+
+	//* New values from the engine: [{sheet (index in the workbook), r, c, text, kind}].
+	showValues: function(inCells) {
+		if (!inCells.length) {
+			return;
+		}
+		var bySheet = {};
+		for (var i = 0; i < this.model.sheets.length; i++) {
+			bySheet[this.model.sheets[i].index] = this.model.sheets[i];
+		}
+		for (var j = 0; j < inCells.length; j++) {
+			var v = inCells[j];
+			var sheet = bySheet[v.sheet];
+			if (!sheet) {
+				continue;
+			}
+			if (!sheet.text[v.r]) {
+				sheet.text[v.r] = [];
+				sheet.kinds[v.r] = [];
+			}
+			sheet.text[v.r][v.c] = v.text;
+			sheet.kinds[v.r][v.c] = v.kind;
+			sheet.rows = Math.max(sheet.rows, v.r + 1);
+			sheet.cols = Math.max(sheet.cols, v.c + 1);
+		}
+		this.$.grid.refresh();
 	},
 
 	// --- Streaming -------------------------------------------------------

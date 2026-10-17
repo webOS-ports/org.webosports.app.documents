@@ -65,6 +65,23 @@ enyo.kind({
 		}
 		// The library is filled in the background either way.
 		this.rescan();
+		this.findConverter();
+	},
+
+	/**
+		Whether LibreOffice's service (org.webosports.service.office) is
+		installed: asked without a document, it answers "badRequest". Then
+		.doc, .ppt and .rtf are listed too, and converted when opened.
+	*/
+	findConverter: function() {
+		var self = this;
+		FileService.call("luna://org.webosports.service.office/convert", {}, function(inErr) {
+			var present = !!inErr && inErr.code === "badRequest";
+			if (present && !FileTypes.converter) {
+				FileTypes.converter = true;
+				self.rescan();
+			}
+		});
 	},
 
 	//* The local path a launch asks for, or null.
@@ -302,11 +319,10 @@ enyo.kind({
 		this.$.saveOk.setActive(false);
 		this.$.saveOk.setDisabled(false);
 		var note = $L("A new file next to the original; the original is not changed.");
-		if (req.format !== "csv") {
-			note += " " + $L("The copy keeps the values and formulas, not the formatting, charts or pictures.");
-		}
 		if (v.doc.kind === "xls") {
-			note += " " + $L("It is saved as .xlsx.");
+			note += " " + $L("It is saved as .xlsx, with the values and formulas but not the formatting, charts or pictures.");
+		} else if (v.doc.kind === "txt" || v.doc.kind === "md") {
+			note += " " + $L("It is saved as UTF-8.");
 		}
 		this.$.saveNote.setContent(enyo.string.escapeHtml(note));
 	},
@@ -330,7 +346,7 @@ enyo.kind({
 		var path = DocLibrary.dirName(v.path) + "/" + name;
 		this.$.saveOk.setActive(true);
 		this.$.saveOk.setDisabled(true);
-		DocLoader.save(req, function(inErr, inBytes) {
+		v.makeCopy(req, function(inErr, inBytes) {
 			if (inErr) {
 				self.saveFailed(inErr.message);
 				return;
@@ -371,8 +387,8 @@ enyo.kind({
 		this.$.aboutText.setContent(
 			"<p>" + enyo.string.escapeHtml($L("Reads Word (.docx), OpenDocument (.odt, .ods, .odp), Excel (.xlsx, .xls), " +
 				"PowerPoint (.pptx), CSV, text and Markdown files.")) + "</p>" +
-			"<p>" + enyo.string.escapeHtml($L("Built with docx-preview (Apache 2.0), SheetJS Community Edition (Apache 2.0) " +
-				"and JSZip (MIT).")) + "</p>" +
+			"<p>" + enyo.string.escapeHtml($L("Built with docx-preview (Apache 2.0), SheetJS Community Edition (Apache 2.0), " +
+				"JSZip (MIT), HyperFormula (GPLv3) and SuperDoc (AGPLv3).")) + "</p>" +
 			"<p>" + enyo.string.escapeHtml($L("Licensed under the GNU General Public License version 3. WebOS Ports.")) + "</p>");
 	},
 

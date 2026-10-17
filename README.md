@@ -6,8 +6,9 @@ Reads office documents on LuneOS: Word (.docx), OpenDocument (.odt,
 and Markdown. A web app in Enyo 1, like the LuneOS core apps, for the
 tablet (1024×768), tall phones (480×800) and the square Q25 (720×720).
 
-It is a viewer first: documents are shown, searched and zoomed, and
-workbooks can have a few cells changed and be saved as a new copy.
+It is a viewer first: documents are shown, searched and zoomed. Word,
+OpenDocument text, workbooks, plain text and Markdown can be edited
+and saved as a new copy; the original is never changed.
 
 On a device
 -----------
@@ -108,18 +109,60 @@ Features
 - The back gesture closes what is open first (a dialog, find, editing a
   cell), then goes back to the library.
 
-### Editing a workbook
+### Editing
+
+**Save a Copy** writes a new file next to the original ("Budget
+(edited).xlsx"); the original is never changed and an existing file is
+never replaced. Saving needs the app's small service (see Building),
+which creates the file with O_EXCL; without it, editing is not offered.
+
+**Workbooks** (.xlsx, .ods, .xls, .csv):
 
 - Tap a cell, **Edit** (or tap it again), type a value, a number or a
   formula, **Done** or Enter.
-- **Save a Copy** writes a new file next to the original ("Budget
-  (edited).xlsx"); the original is never changed and an existing file
-  is never replaced. .xlsx and .xls are saved as .xlsx, .ods as .ods,
-  .csv as .csv. The copy keeps values and formulas, not formatting,
-  charts or pictures, and the dialog says so.
-- Saving needs the app's small service (see Building), which creates
-  the file with O_EXCL. Without it, Edit is not offered.
+- Formulas are worked out as you type (HyperFormula): the cell shows
+  its result and every formula that uses it shows its new one.
+- A copy of an .xlsx or .ods is the file itself with only the edited
+  cells rewritten (SheetPatch.js): cell styles, conditional formatting,
+  charts, pictures, comments and names are kept. Formulas keep their
+  results, and the copy asks to be worked out again when it is opened
+  (fullCalcOnLoad). An .xls is saved as .xlsx, with values and formulas
+  only, and the dialog says so; .csv as .csv.
 - Large workbooks (below) are read-only.
+
+**OpenDocument text** (.odt): the pencil in the toolbar; then a tap on
+a paragraph puts its text in a box in its place, **Done** writes it.
+Words that were not changed keep their formatting; replaced words take
+the formatting of what they replace, added ones that of the words
+before them. Tabs and line breaks (Enter) are kept; pictures, notes and
+fields are shown as one character each, and go when it is deleted. The
+copy is the file with only those paragraphs changed (TextEdit.js).
+Paragraphs in table rows the document repeats are not editable.
+
+**Word** (.docx): the pencil opens the document in SuperDoc, a .docx
+editor that runs in the page (it is large, so it is loaded on first
+use). A bar of keys over the page: undo, redo, bold, italic,
+underline, bullets and numbering; the zoom keys work its zoom. The copy
+is SuperDoc's .docx, without the properties it would add to the file
+(its version and an id for the document); the document's comments are
+kept. Its usage reports are turned off.
+
+**Plain text and Markdown**: the pencil puts the whole text in a box;
+the copy is UTF-8.
+
+Measured with `tools/test-device.sh` on 2026-10-17 (the TouchPad with
+the app installed under a test id, with its service):
+
+| | HP TouchPad | mindphone | Q25 |
+|---|---|---|---|
+| first cell edit, formulas worked out (loads HyperFormula) | 3.8 s | 1.3 s | 0.3 s |
+| the next cell edit | 0.09 s | 0.03 s | 0.01 s |
+| an .odt paragraph shown again after Done | 0.3 s | 0.3 s | 0.03 s |
+| saving the .odt copy (the service starts) | 6.3 s | 0.3 s | 0.3 s |
+| the .docx editor ready (loads SuperDoc) | 47.7 s | 14.3 s | 2.4 s |
+| SuperDoc's .docx copy made | 2.2 s | 0.9 s | 0.2 s |
+
+No WAM renderer crash on any of them during these runs.
 
 What is shown, and how
 ----------------------
@@ -135,8 +178,15 @@ What is shown, and how
 | .md | Text.js | headings, emphasis, code, lists, tables, quotes, links | raw HTML is shown as text |
 | .txt | Text.js | UTF-8, UTF-16 with a byte order mark, else Windows-1252 | |
 
-The binary .doc and .ppt (from before 2007), .rtf and PDF are
-recognised and named, not opened.
+The binary .doc and .ppt (from before 2007) and .rtf are opened when
+LibreOffice's service (org.webosports.service.office) is installed:
+the app asks it once at start, and then lists them too. LibreOffice
+converts the document into its cache (.doc and .rtf to .odt, .ppt to
+.odp), and that is shown under the document's own name, as "Word
+97-2003 document, converted by LibreOffice"; a copy is saved next to
+the original, as OpenDocument. Without the service they are not listed,
+and opened from elsewhere they say why. PDF goes to the app registered
+for it.
 
 Nothing in a document reaches the page as markup or script: the
 readers build plain data, the page builds it with createElement and
@@ -219,12 +269,16 @@ Code
 ----
 
 - `source/core/` - no DOM, runs in the worker and in node:
-  `Xml.js` (a small XML parser), `FileTypes.js`, `Odf.js`, `Docx.js`,
-  `Pptx.js`, `Text.js` (decoding, Markdown, CSV), `Sheets.js`,
-  `SheetStream.js`, `Engine.js` (opens a document), `Worker.js`,
+  `Xml.js` (a small XML parser; with offsets, for editing), `FileTypes.js`,
+  `Odf.js`, `Docx.js`, `Pptx.js`, `Text.js` (decoding, Markdown, CSV),
+  `Sheets.js`, `SheetStream.js`, `SheetPatch.js` (edited cells into the
+  workbook's own XML), `Formulas.js` (HyperFormula), `TextEdit.js`
+  (edited ODF paragraphs), `DocxCopy.js` (tidies SuperDoc's .docx),
+  `Engine.js` (opens a document, edits, copies), `Worker.js`,
   `Library.js` (the scan, launch targets, names).
 - `source/views/` - `DocRender.js` (model to DOM), `Finder.js`,
-  `SheetGrid.js`, `SheetView.js`, `ViewerView.js`, `LibraryView.js`.
+  `SheetGrid.js`, `SheetView.js`, `DocxEditor.js` (SuperDoc),
+  `ViewerView.js`, `LibraryView.js`.
 - `source/services/` - `DocLoader.js` (file reads, the worker),
   `FileService.js` (luna).
 - `lib/` - third-party, as bundled:
@@ -234,6 +288,11 @@ Code
 | docx-preview | 0.4.1 | Apache-2.0 | laying out .docx |
 | SheetJS Community Edition | 0.20.3 | Apache-2.0 | reading and writing workbooks |
 | JSZip | 3.10.2 | MIT (dual MIT/GPLv3; used under MIT); includes pako, MIT | zip containers |
+| HyperFormula | 3.5.0 | GPLv3 (dual GPLv3/proprietary; used under GPLv3) | working formulas out while editing |
+| SuperDoc | 1.46.3 | AGPLv3 | editing .docx |
+
+SuperDoc 2 needs a separate DOCX engine whose licence is proprietary
+and forbids passing it on; 1.46.3 is the last version without it.
 
 Tests
 -----
@@ -247,11 +306,20 @@ Tests
   the helpers, the streaming parsers fed a few characters at a time,
   and the service's writer (it never replaces a file, refuses paths
   outside /media/internal). Node only.
+- `tools/tests/edit-tests.js`: editing: the parser's offsets, edited
+  cells in .xlsx and .ods XML (repeated rows and cells split, shared
+  formulas written out, new results), formulas worked out again, ODF
+  paragraph edits (formatting kept, the parsed tree's offsets checked
+  against a fresh parse after every edit), the engine's copies (every
+  other part of the file byte for byte the same), and SuperDoc's stamps
+  removed. Node only.
 - `tools/tests/e2e-tests.js`: the app in headless Chromium with the
   webOS runtime, the luna bus (with the device's permission groups) and
   the files mocked: the library, launch and relaunch targets, every
   format, find, zoom, night reading, links, the grid with 20 000 rows,
-  editing and saving a copy, and the three screen sizes. Every test
+  editing (cells with their formulas' results, an .odt paragraph, a
+  text file, a .docx in SuperDoc) and saving a copy, and the three
+  screen sizes. Every test
   also fails on a page error or an unmocked or refused call.
 - `tools/tests/device-tests.js`: on a device, through WAM's DevTools
   port: every fixture, the large documents, find, layout, and opening as

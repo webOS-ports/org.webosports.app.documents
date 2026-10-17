@@ -7,6 +7,9 @@
 		DocRender.blocks(parentNode, blocks, {images: {zipPath: blobUrl}});
 		DocRender.slides(parentNode, deck.slides, ctx);   // one .doc-slide per slide
 		DocRender.neutraliseLinks(node);                  // for docx-preview's output
+		DocRender.paragraph(block, ctx);                  // one paragraph's node (to put in place of an edited one)
+
+	A paragraph that can be edited (it has an id) carries it as data-pid.
 */
 var DocRender = {
 	apply: function(inNode, inCss) {
@@ -87,6 +90,9 @@ var DocRender = {
 		switch (b.t) {
 		case "p":
 			n = this.el(b.h ? "h" + b.h : "p", "doc-p", inParent);
+			if (b.id !== undefined) {
+				n.setAttribute("data-pid", String(b.id));
+			}
 			this.apply(n, b.s);
 			if (b.bu) {
 				var bullet = this.el("span", "doc-bullet", n);
@@ -141,6 +147,12 @@ var DocRender = {
 			}
 			break;
 		}
+	},
+
+	paragraph: function(inBlock, inCtx) {
+		var holder = document.createElement("div");
+		this.block(holder, inBlock, inCtx);
+		return holder.firstChild;
 	},
 
 	table: function(inParent, inTable, inCtx) {

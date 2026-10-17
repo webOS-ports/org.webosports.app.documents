@@ -212,6 +212,94 @@ t.test("a PDF goes to the app registered for application/pdf", async function() 
 	assert.deepStrictEqual(page.errors, []);
 });
 
+// --- Editing (when the app's service is installed: without it nothing is editable) ----------------
+
+//* Whether this install has the service; the editing tests skip themselves without it.
+async function hasService() {
+	return page.eval("new Promise(function(r){FileService.serviceAvailable(function(ok){r(!!ok);});})");
+}
+
+//* Polls inExpression until it is true; resolves with the time taken.
+async function timeUntil(inExpression, inTimeout) {
+	var t0 = Date.now();
+	await page.waitFor(inExpression, inTimeout || 120000);
+	return Date.now() - t0;
+}
+
+t.test("editing: a cell, and the results of the formulas that use it", async function() {
+	if (!(await hasService())) {
+		console.log("     (skipped: the app's service is not installed)");
+		return;
+	}
+	await openAndMeasure(DIR + "/sample.xlsx", 60000);
+	await page.waitFor("documentsApp.$.viewer.$.sheet.editable", 10000);
+	await page.eval("var s=documentsApp.$.viewer.$.sheet; s.$.grid.select(1,1); s.startEdit(); s.$.editor.setValue('2'); s.commitEdit(); 1");
+	// The first edit loads HyperFormula into the worker and works the workbook out.
+	var first = await timeUntil("documentsApp.$.viewer.$.sheet.currentSheet().text[1][3] === '8'");
+	await page.eval("var s=documentsApp.$.viewer.$.sheet; s.$.grid.select(1,2); s.startEdit(); s.$.editor.setValue('5'); s.commitEdit(); 1");
+	var next = await timeUntil("documentsApp.$.viewer.$.sheet.currentSheet().text[1][3] === '10'");
+	results.editing = results.editing || {};
+	results.editing.firstCellMs = first;
+	results.editing.nextCellMs = next;
+	console.log("     first edit worked out after " + first + " ms (HyperFormula loaded), the next after " + next + " ms");
+	await shot("60-edit-xlsx");
+	assert.deepStrictEqual(page.errors, []);
+});
+
+t.test("editing: an .odt paragraph, saved as a copy through the service", async function() {
+	if (!(await hasService())) {
+		console.log("     (skipped: the app's service is not installed)");
+		return;
+	}
+	var copy = DIR + "/sample (edited).odt";
+	await adb("rm -f '" + copy + "'");
+	await openAndMeasure(DIR + "/sample.odt", 60000);
+	await page.waitFor("documentsApp.$.viewer.$.editButton.showing", 10000);
+	await page.eval("documentsApp.$.viewer.toggleEdit(); var n=Array.prototype.filter.call(document.querySelectorAll('[data-pid]'), " +
+		"function(x){return /bold words/.test(x.textContent);})[0]; documentsApp.$.viewer.startParagraph(n); 1");
+	await page.waitFor("document.querySelector('.doc-para-input')", 10000);
+	await shot("61-edit-odt");
+	await page.eval("document.querySelector('.doc-para-input').value='Plain, very bold words and red underlined text, E=mc2!'; " +
+		"documentsApp.$.viewer.commitParagraph(); 1");
+	var ms = await timeUntil("!document.querySelector('.doc-para-input') && /very bold/.test(document.querySelector('.viewer-content').textContent)");
+	await page.eval("documentsApp.$.viewer.back(); documentsApp.$.viewer.saveCopy(); 1");
+	await page.waitFor("documentsApp.$.saveDialog.isOpen", 10000);
+	await page.eval("documentsApp.doSave(); 1");
+	var saved = await timeUntil("!documentsApp.$.saveDialog.isOpen", 30000);
+	var ls = await adb("ls -l '" + copy + "'");
+	results.editing = results.editing || {};
+	results.editing.odtParagraphMs = ms;
+	results.editing.odtSaveMs = saved;
+	console.log("     paragraph shown again after " + ms + " ms; copy saved after " + saved + " ms: " + ls.trim());
+	assert.ok(/sample \(edited\)\.odt/.test(ls), "the copy is on the device");
+	await adb("rm -f '" + copy + "'");
+	assert.deepStrictEqual(page.errors, []);
+});
+
+t.test("editing: a .docx in SuperDoc", async function() {
+	if (!(await hasService())) {
+		console.log("     (skipped: the app's service is not installed)");
+		return;
+	}
+	await openAndMeasure(DIR + "/sample.docx", 60000);
+	await page.waitFor("documentsApp.$.viewer.$.editButton.showing", 10000);
+	await page.eval("documentsApp.$.viewer.toggleEdit(); 1");
+	var ms = await timeUntil("documentsApp.$.viewer.$.docx.isOpen() && documentsApp.$.viewer.editMode", 240000);
+	await page.eval("(function(){var e=documentsApp.$.viewer.$.docx.superdoc.activeEditor; e.commands.setTextSelection({from: 3, to: 3}); " +
+		"e.commands.insertContent('Edited '); return 1;})()");
+	await page.waitFor("documentsApp.$.viewer.$.saveButton.showing", 10000);
+	var t0 = Date.now();
+	var bytes = await page.eval("new Promise(function(r){documentsApp.$.viewer.$.docx.copyBytes(function(e, b){r(e ? -1 : b.length);});})");
+	var copyMs = Date.now() - t0;
+	results.editing = results.editing || {};
+	results.editing.docxEditorMs = ms;
+	results.editing.docxCopyMs = copyMs;
+	console.log("     SuperDoc ready after " + ms + " ms; a copy of " + bytes + " bytes made in " + copyMs + " ms");
+	await shot("62-edit-docx");
+	assert.ok(bytes > 1000);
+	assert.deepStrictEqual(page.errors, []);
+});
+
 ["large.docx", "large.odt", "large.xlsx", "large.ods", "large.csv"].forEach(function(f) {
 	t.test("large document: " + f, async function() {
 		var present = serial ? await adb("ls " + DIR + "/" + f + " 2>/dev/null") : "";

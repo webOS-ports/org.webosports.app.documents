@@ -6,6 +6,7 @@
 		FileService.openUrl("https://...");            // in the browser (applicationManager/open)
 		FileService.openWith(path, "application/pdf", function(err) {...}); // in the MIME type's app
 		FileService.writeNew(path, bytes, function(err) {...});
+		FileService.convert(path, "odt", function(err, {target}) {...});   // LibreOffice, when installed
 
 	list and size are the File Manager's service
 	(org.webosports.service.filemanager, group filemanager-service.operation).
@@ -123,6 +124,15 @@ var FileService = {
 		Writes inBytes (Uint8Array) to a new file at inPath. Fails, writing
 		nothing, when the file exists.
 	*/
+	/**
+		Has LibreOffice (org.webosports.service.office) convert a document
+		into inFormat ("odt", "ods", "odp", ...). The result is a file in
+		the service's cache: {target, format, cached}.
+	*/
+	convert: function(inPath, inFormat, inCallback) {
+		this.call("luna://org.webosports.service.office/convert", {source: inPath, format: inFormat}, inCallback);
+	},
+
 	writeNew: function(inPath, inBytes, inCallback) {
 		var bin = "";
 		var chunk = 0x8000;
