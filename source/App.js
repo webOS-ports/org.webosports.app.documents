@@ -373,7 +373,7 @@ enyo.kind({
 				"PowerPoint (.pptx), CSV, text and Markdown files.")) + "</p>" +
 			"<p>" + enyo.string.escapeHtml($L("Built with docx-preview (Apache 2.0), SheetJS Community Edition (Apache 2.0) " +
 				"and JSZip (MIT).")) + "</p>" +
-			"<p>" + enyo.string.escapeHtml($L("Licensed under the Apache License 2.0. WebOS Ports.")) + "</p>");
+			"<p>" + enyo.string.escapeHtml($L("Licensed under the GNU General Public License version 3. WebOS Ports.")) + "</p>");
 	},
 
 	closeAbout: function() {

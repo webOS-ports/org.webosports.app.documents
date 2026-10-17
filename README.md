@@ -259,5 +259,5 @@ Tests
 License
 -------
 
-Apache License 2.0, see LICENSE. The libraries in lib/ keep their own
-licences (NOTICE, and the LICENSE file next to each).
+GNU General Public License version 3, see LICENSE. The libraries in lib/
+keep their own licences (NOTICE, and the LICENSE file next to each).

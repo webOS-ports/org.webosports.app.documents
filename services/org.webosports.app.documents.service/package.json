@@ -3,5 +3,5 @@
 	"version": "0.1.0",
 	"description": "Documents: writes a saved copy to a new file",
 	"main": "service.js",
-	"license": "Apache-2.0"
+	"license": "GPL-3.0-only"
 }
