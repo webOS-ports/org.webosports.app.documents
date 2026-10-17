@@ -855,10 +855,17 @@ t.test("LibreOffice editing: a session's tiles, taps, typing, Bold, the next sli
 	assert.strictEqual(mouse[0].params.type, "down");
 	assert.strictEqual(mouse[1].params.type, "up");
 	assert.ok(mouse[0].params.x > 0 && mouse[0].params.y > 0 && mouse[0].params.x < 28000, JSON.stringify(mouse[0].params));
+	// Repaints and taps are not edits
+	await page.waitFor("__MOCK__.calls.filter(function(c){return /paintTile/.test(c.url)}).length > " + paints.length, 5000);
+	assert.strictEqual(await page.eval("documentsApp.$.viewer.$.saveButton.showing"), false, "not edited yet");
 	// Typing: the text box takes it and sends it as committed text
-	await page.eval("document.querySelector('.lok-input').focus(); 1");
+	await page.eval("document.querySelector('.lok-tile').__kept = true; document.querySelector('.lok-input').focus(); 1");
 	await page.send("Input.insertText", {text: "Hi"});
 	await page.waitFor("__MOCK__.calls.some(function(c){return /extTextInput/.test(c.url) && c.params.text === 'Hi' && c.params.type === 'commit'})", 5000);
+	// The Save button shows with the first edit; the page keeps its tiles (no new layout for the same width)
+	await page.waitFor("documentsApp.$.viewer.$.saveButton.showing", 5000);
+	await page.eval("new Promise(function(r){setTimeout(r, 300);})");
+	assert.strictEqual(await page.eval("document.querySelector('.lok-tile').__kept === true"), true, "the tiles kept");
 	// Bold, through the key bar
 	await page.eval("documentsApp.$.viewer.$.lok.uno(documentsApp.$.viewer.$.lok.$.bold); 1");
 	var unos = await calls("luna", "service.office/uno");

@@ -190,6 +190,7 @@ enyo.kind({
 			// The page's width fills the view, less a margin
 			this.zoom = Math.max(0.1, (host.clientWidth - 16) * 1440 / 96 / s.width);
 		}
+		this.laidOutWidth = host ? host.clientWidth : 0;
 		var sc = this.scale();
 		this.page.style.width = Math.ceil(s.width * sc) + "px";
 		this.page.style.height = Math.ceil(s.height * sc) + "px";
@@ -244,7 +245,7 @@ enyo.kind({
 	makeTile: function(inCol, inRow) {
 		var T = this.TILE;
 		var canvas = document.createElement("canvas");
-		var ratio = Math.min(4, window.devicePixelRatio || 1);
+		var ratio = Math.min(4, this.pixelRatio());
 		canvas.className = "lok-tile";
 		canvas.width = Math.min(1024, Math.round(T * ratio));
 		canvas.height = canvas.width;
@@ -254,6 +255,19 @@ enyo.kind({
 		canvas.style.height = T + "px";
 		this.page.insertBefore(canvas, this.selectionLayer);
 		return {col: inCol, row: inRow, canvas: canvas, dirty: true, queued: false, generation: 0};
+	},
+
+	/**
+		Device pixels per CSS pixel. WAM zooms the whole page on LuneOS (450 CSS
+		px wide on the Q25's 720 px screen) and still says devicePixelRatio 1:
+		tiles drawn at that would be stretched and blurred.
+	*/
+	pixelRatio: function() {
+		var ratio = window.devicePixelRatio || 1;
+		if (window.PalmSystem && window.screen && window.innerWidth && screen.width > window.innerWidth) {
+			ratio = Math.max(ratio, screen.width / window.innerWidth);
+		}
+		return ratio;
 	},
 
 	//* Asks for the next tiles, PARALLEL at a time
@@ -384,7 +398,7 @@ enyo.kind({
 					this.invalidate(n.length >= 5 ? n[4] : s.part, {x: n[0], y: n[1], w: n[2], h: n[3]});
 				}
 			}
-			this.doChanged();
+			// Not an edit by itself: a tap that selects a text box repaints too
 			break;
 		case "cursor":
 			this.showCursor(p);
@@ -692,7 +706,9 @@ enyo.kind({
 
 	resizeHandler: function() {
 		this.inherited(arguments);
-		if (this.session && this.fit) {
+		var host = this.$.host.hasNode();
+		// The Save button showing up resizes too: only a new width lays the page out again
+		if (this.session && this.fit && host && host.clientWidth !== this.laidOutWidth) {
 			this.showPart();
 		}
 	}
