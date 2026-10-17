@@ -15,6 +15,7 @@ enyo.kind({
 		onOpened: "",
 		onClose: "",
 		onOpenLink: "",
+		onHandOff: "",
 		onSaveCopy: "",
 		onNight: ""
 	},
@@ -135,6 +136,13 @@ enyo.kind({
 		var keep = FileTypes.kindFromName(inName) === "docx" || FileTypes.sniff(new Uint8Array(inBuffer, 0, Math.min(8, inBuffer.byteLength))) === "zip" ?
 			inBuffer : null;
 		var forEngine = keep ? inBuffer.slice(0) : inBuffer;
+		// Content another app shows, under a name that said otherwise: hand it on.
+		var handOff = FileTypes.handOffMime(FileTypes.resolve(inName, new Uint8Array(inBuffer, 0, Math.min(8, inBuffer.byteLength))).kind);
+		if (handOff && !FileTypes.handOffMime(FileTypes.kindFromName(inName))) {
+			this.pendingHandOff = {name: inName, buffer: forEngine, token: inToken};
+			this.doHandOff(this.path, handOff);
+			return;
+		}
 		var onProgress = function(inUpdate) {
 			if (inToken === self.loadToken && self.doc && self.doc.family === "sheet") {
 				self.sheetProgress(inUpdate);
@@ -174,6 +182,21 @@ enyo.kind({
 		}, onProgress);
 	},
 
+	//* No app took the file onHandOff offered: say so, the way any refused file is.
+	handOffFailed: function() {
+		var p = this.pendingHandOff;
+		this.pendingHandOff = null;
+		if (!p || p.token !== this.loadToken) {
+			return;
+		}
+		var self = this;
+		DocLoader.open(p.name, p.buffer, function(inErr) {
+			if (p.token === self.loadToken) {
+				self.showError(inErr ? inErr.message : $L("This document could not be opened."), inErr && inErr.code);
+			}
+		});
+	},
+
 	//* More rows of a streamed workbook.
 	sheetProgress: function(inUpdate) {
 		var sheetView = this.$.sheet;
@@ -202,6 +225,7 @@ enyo.kind({
 	},
 
 	reset: function() {
+		this.pendingHandOff = null;
 		this.closeFind();
 		if (this.progressive) {
 			this.progressive.cancel();

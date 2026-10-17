@@ -186,7 +186,7 @@
 	DocEngine.prototype.unsupported = function(inKind, inLabel) {
 		var e = new Error(inKind === "doc" || inKind === "ppt" ?
 			inLabel + " files (the binary format from before 2007) cannot be opened. Save it as ." + inKind + "x or as OpenDocument." :
-			inKind === "pdf" ? "This is a PDF document. Open it with PDF Viewer." :
+			inKind === "pdf" ? "This is a PDF document, and no app to show PDF documents answered." :
 			inKind === "rtf" ? "Rich text (.rtf) files are not supported yet." :
 			"This file is not a document Documents can open.");
 		e.code = "unsupported";

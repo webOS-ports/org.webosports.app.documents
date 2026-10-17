@@ -101,7 +101,7 @@ enyo.kind({
 			var folder = String(inDoc.dir || DocLibrary.dirName(inDoc.path)).replace(/^\/media\/internal\/?/, "");
 			var sub = inRecent && inDoc.opened ? self.when(inDoc.opened) : (folder || $L("USB storage"));
 			html.push("<div class=\"library-item\" data-row=\"" + (rows.length - 1) + "\">" +
-				"<div class=\"library-icon library-icon-" + family + "\"><span>" + esc(FileTypes.extensionOf(inDoc.name).slice(0, 4)) + "</span></div>" +
+				"<div class=\"library-icon library-icon-" + (family || inDoc.kind) + "\"><span>" + esc(FileTypes.extensionOf(inDoc.name).slice(0, 4)) + "</span></div>" +
 				"<div class=\"library-text\"><div class=\"library-name\">" + esc(inDoc.name) + "</div>" +
 				"<div class=\"library-sub\">" + esc(sub) + "</div></div></div>");
 		};

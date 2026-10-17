@@ -175,6 +175,43 @@ t.test("opened as Files opens it: applicationManager/open with a file URL", asyn
 	await shot("40-opened-like-files");
 });
 
+t.test("a PDF goes to the app registered for application/pdf", async function() {
+	if (!serial) {
+		console.log("     (skipped: no DEVICE_SERIAL)");
+		return;
+	}
+	var running = async function() {
+		await adb("luna-send -n 1 -w 8000 luna://com.webos.service.applicationmanager/running '{}' > /tmp/documents-run.out 2>&1");
+		return adb("cat /tmp/documents-run.out; rm -f /tmp/documents-run.out");
+	};
+	await adb("luna-send -n 1 -w 8000 luna://com.palm.applicationManager/listAllHandlersForMime '{\"mime\":\"application/pdf\"}' > /tmp/documents-h.out 2>&1");
+	var handler = ((await adb("cat /tmp/documents-h.out; rm -f /tmp/documents-h.out")).match(/"activeHandler"[^}]*"appId": *"([^"]+)"/) || [])[1];
+	results.pdfHandler = handler || null;
+	if (!handler) {
+		console.log("     (skipped: no app on this device handles application/pdf)");
+		return;
+	}
+	await adb("luna-send -n 1 -w 8000 luna://com.webos.service.applicationmanager/closeByAppId '{\"id\":\"" + handler + "\"}' > /dev/null 2>&1; sleep 2");
+	await page.eval("documentsApp.$.pane.selectViewByName('library'); documentsApp.openDocument(null, " + JSON.stringify(DIR + "/hand off.pdf") + "); 1");
+	var started = false;
+	for (var i = 0; i < 20 && !started; i++) {
+		await sleep(1000);
+		started = (await running()).indexOf("\"id\":\"" + handler + "\"") >= 0;
+	}
+	results.pdfHandedTo = started ? handler : null;
+	console.log("     " + (started ? handler + " started" : handler + " did not start") + "; Documents shows its " + await page.eval("documentsApp.$.pane.getViewName()"));
+	await adb("luna-send -n 1 -w 10000 luna://com.webos.surfacemanager/captureCompositorOutput '{\"output\":\"/tmp/documents-pdf.png\",\"format\":\"PNG\"}' > /dev/null 2>&1");
+	await new Promise(function(resolve) {
+		execFile("adb", ["-s", serial, "pull", "/tmp/documents-pdf.png", path.join(outDir, "45-pdf-handed-on.png")], function() {
+			resolve();
+		});
+	});
+	await adb("rm -f /tmp/documents-pdf.png; luna-send -n 1 -w 8000 luna://com.webos.service.applicationmanager/closeByAppId '{\"id\":\"" + handler + "\"}' > /dev/null 2>&1");
+	assert.ok(started, handler + " was not started");
+	assert.strictEqual(await page.eval("documentsApp.$.pane.getViewName()"), "library");
+	assert.deepStrictEqual(page.errors, []);
+});
+
 ["large.docx", "large.odt", "large.xlsx", "large.ods", "large.csv"].forEach(function(f) {
 	t.test("large document: " + f, async function() {
 		var present = serial ? await adb("ls " + DIR + "/" + f + " 2>/dev/null") : "";

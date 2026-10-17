@@ -115,6 +115,11 @@
 	background: #b07048;
 }
 
+/* Opened by the PDF app, not here. */
+.library-icon-pdf {
+	background: #a24c44;
+}
+
 .library-text {
 	flex: 1;
 	min-width: 0;

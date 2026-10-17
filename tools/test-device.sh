@@ -36,6 +36,30 @@ $ADB shell "mkdir -p $DIR"
 for f in tools/tests/fixtures/*.*; do
 	$ADB push "$f" "$DIR/" >/dev/null
 done
+# A one-page PDF, for the hand-off to the PDF app (a space in the name on purpose).
+mkdir -p test-output
+python3 -I - "test-output/hand off.pdf" <<'PY'
+import sys
+objs = [b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+        None,
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
+text = b"BT /F1 24 Tf 40 100 Td (Handed on) Tj ET"
+objs[3] = b"<< /Length %d >>\nstream\n" % len(text) + text + b"\nendstream"
+out = bytearray(b"%PDF-1.4\n")
+offsets = []
+for i, o in enumerate(objs):
+    offsets.append(len(out))
+    out += b"%d 0 obj\n" % (i + 1) + o + b"\nendobj\n"
+xref = len(out)
+out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objs) + 1)
+for off in offsets:
+    out += b"%010d 00000 n \n" % off
+out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objs) + 1, xref)
+open(sys.argv[1], "wb").write(out)
+PY
+$ADB push "test-output/hand off.pdf" "$DIR/" >/dev/null
 case " $* " in
 	*" --no-large "*) ;;
 	*)

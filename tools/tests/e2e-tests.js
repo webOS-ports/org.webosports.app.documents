@@ -46,6 +46,10 @@ function makeE2eRoot() {
 	var ole = Buffer.alloc(2048);
 	Buffer.from([0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]).copy(ole);
 	fs.writeFileSync(path.join(E2E_ROOT, "legacy.doc"), ole);
+	// PDFs, for the PDF app: one by its name, one behind a ".docx" name.
+	var pdf = Buffer.from("%PDF-1.4\n1 0 obj << >> endobj\ntrailer << >>\n%%EOF\n");
+	fs.writeFileSync(path.join(E2E_ROOT, "Manual 1.pdf"), pdf);
+	fs.writeFileSync(path.join(E2E_ROOT, "scan.docx"), pdf);
 }
 
 function fixtureFiles() {
@@ -80,7 +84,7 @@ function acg() {
 */
 function scenario(inOptions) {
 	var o = inOptions || {};
-	var files = fixtureFiles().concat(["big.csv", "legacy.doc"]).join(",");
+	var files = fixtureFiles().concat(["big.csv", "Manual 1.pdf", "scan.docx", "legacy.doc"]).join(",");
 	var luna = {
 		"luna://org.webosports.service.filemanager/GetDirectories": {cases: [
 			{when: {dir: "/media/internal"}, json: {dirs: "Work,.thumbnails,src", files: files}},
@@ -105,7 +109,7 @@ function scenario(inOptions) {
 		luna: luna,
 		acg: acg(),
 		rewrite: [
-			{from: "^file:///media/internal/(big\\.csv|legacy\\.doc|Work/)", to: server.url + "/test-output/e2e-root/$1"},
+			{from: "^file:///media/internal/(big\\.csv|legacy\\.doc|Manual(%20| )1\\.pdf|scan\\.docx|Work/)", to: server.url + "/test-output/e2e-root/$1"},
 			{from: "^file:///media/internal/", to: server.url + "/tools/tests/fixtures/"}
 		],
 		http: [],
@@ -219,6 +223,52 @@ t.test("library: tapping a document opens it; it is then listed as recent", asyn
 	assert.strictEqual(await text(".library-item .library-name"), "sample.odt");
 	var stored = await page.eval("JSON.parse(localStorage.getItem('documents.prefs')).recent[0].path");
 	assert.strictEqual(stored, "/media/internal/sample.odt");
+});
+
+t.test("library: a PDF is listed, and a tap hands it to the application/pdf app", async function() {
+	await open(scenario());
+	await libraryNames();
+	await page.eval("documentsApp.$.library.$.search.setValue('manual'); documentsApp.$.library.searchChanged(); 1");
+	await page.waitFor("document.querySelectorAll('.library-name').length === 1");
+	assert.strictEqual(await text(".library-name"), "Manual 1.pdf");
+	assert.strictEqual(await count(".library-icon-pdf"), 1);
+	await page.tap(".library-item");
+	await page.waitFor("__MOCK__.calls.some(function(c){return /applicationManager\\/open/.test(c.url);})");
+	var c = await calls("luna", "applicationManager/open");
+	assert.strictEqual(c.length, 1);
+	assert.strictEqual(c[0].params.target, "file:///media/internal/Manual%201.pdf");
+	assert.strictEqual(c[0].params.mime, "application/pdf");
+	assert.strictEqual(c[0].acg, "granted");
+	assert.strictEqual(await page.eval("documentsApp.$.pane.getViewName()"), "library", "Documents stays on its library");
+	assert.strictEqual((await calls("file", "Manual")).length, 0, "the PDF is not read here");
+});
+
+t.test("opening: a PDF behind a .docx name is handed on too", async function() {
+	await open(scenario());
+	await page.eval("documentsApp.openDocument(null, '/media/internal/scan.docx'); 1");
+	await page.waitFor("__MOCK__.calls.some(function(c){return /applicationManager\\/open/.test(c.url);})");
+	var c = await calls("luna", "applicationManager/open");
+	assert.strictEqual(c[0].params.target, "file:///media/internal/scan.docx");
+	assert.strictEqual(c[0].params.mime, "application/pdf");
+	await page.waitFor("documentsApp.$.pane.getViewName() === 'library'");
+});
+
+t.test("opening: the application manager's empty failure after a launch counts as handed on", async function() {
+	await open(scenario({luna: {"luna://com.palm.applicationManager/open": {error: {errorText: ""}}}}));
+	await page.eval("documentsApp.openDocument(null, '/media/internal/Manual 1.pdf'); 1");
+	await page.waitFor("__MOCK__.calls.some(function(c){return /applicationManager\\/open/.test(c.url);})");
+	await page.eval("new Promise(function(r){setTimeout(r, 300);})");
+	assert.strictEqual(await page.eval("documentsApp.$.pane.getViewName()"), "library");
+	assert.strictEqual((await calls("file", "Manual")).length, 0);
+});
+
+t.test("opening: with no app for PDFs, the viewer says so", async function() {
+	await open(scenario({luna: {"luna://com.palm.applicationManager/open":
+		{error: {errorText: "No handler for file:///media/internal/Manual%201.pdf"}}}}));
+	assert.strictEqual(await openDoc("/media/internal/Manual 1.pdf"), "error");
+	assert.ok(/no app to show PDF/.test(await text(".viewer-status-text")));
+	assert.strictEqual(await openDoc("/media/internal/scan.docx"), "error");
+	assert.ok(/no app to show PDF/.test(await text(".viewer-status-text")));
 });
 
 // --- Opening -----------------------------------------------------------------------

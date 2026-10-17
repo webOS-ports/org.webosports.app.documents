@@ -8,8 +8,9 @@
 		docx, odt, txt, md   "text"    (flowing pages)
 		xlsx, xls, ods, csv  "sheet"   (a grid)
 		pptx, odp            "slides"
-	plus "doc", "ppt" and "rtf", which are recognised only to say they are
-	not supported, and "unknown".
+	plus "pdf", which another app opens (handOffMime: the system's
+	handler for its MIME type), "doc", "ppt" and "rtf", which are
+	recognised only to say they are not supported, and "unknown".
 
 	Pure logic, no DOM: tested in node (tools/tests/unit-tests.js).
 */
@@ -27,7 +28,8 @@
 		odp: {family: "slides", label: "OpenDocument presentation", mime: "application/vnd.oasis.opendocument.presentation"},
 		doc: {family: null, label: "Word 97-2003 document", mime: "application/msword"},
 		ppt: {family: null, label: "PowerPoint 97-2003 presentation", mime: "application/vnd.ms-powerpoint"},
-		rtf: {family: null, label: "Rich text", mime: "application/rtf"}
+		rtf: {family: null, label: "Rich text", mime: "application/rtf"},
+		pdf: {family: null, label: "PDF document", mime: "application/pdf", handOff: true}
 	};
 
 	//* File name extension -> kind.
@@ -42,7 +44,8 @@
 		csv: "csv", tsv: "csv",
 		pptx: "pptx", pptm: "pptx", ppsx: "pptx", potx: "pptx",
 		odp: "odp", otp: "odp", fodp: "odp",
-		doc: "doc", ppt: "ppt", rtf: "rtf"
+		doc: "doc", ppt: "ppt", rtf: "rtf",
+		pdf: "pdf"
 	};
 
 	//* ODF "mimetype" entry -> kind.
@@ -74,9 +77,18 @@
 		return !!(kinds[inKind] && kinds[inKind].family);
 	}
 
-	//* True when the name has an extension of a kind the viewer can open.
+	/**
+		The MIME type to ask the application manager to open a file of
+		inKind with, for a kind another app shows; null for the rest.
+	*/
+	function handOffMime(inKind) {
+		return kinds[inKind] && kinds[inKind].handOff ? kinds[inKind].mime : null;
+	}
+
+	//* True when the name has an extension of a kind the library lists: one the viewer opens or hands on.
 	function isDocumentName(inName) {
-		return isSupported(kindFromName(inName));
+		var kind = kindFromName(inName);
+		return isSupported(kind) || !!handOffMime(kind);
 	}
 
 	/**
@@ -191,7 +203,7 @@
 			// A ".txt" with binary content is shown anyway (lossy), not refused.
 			kind = byName;
 		}
-		var info = kinds[kind] || {family: null, label: kind === "pdf" ? "PDF document" : "Unknown file"};
+		var info = kinds[kind] || {family: null, label: "Unknown file"};
 		return {kind: kind, family: info.family, label: info.label, mismatch: byName !== kind && byName !== "unknown"};
 	}
 
@@ -216,6 +228,7 @@
 		extensionOf: extensionOf,
 		kindFromName: kindFromName,
 		isSupported: isSupported,
+		handOffMime: handOffMime,
 		isDocumentName: isDocumentName,
 		sniff: sniff,
 		looksLikeText: looksLikeText,

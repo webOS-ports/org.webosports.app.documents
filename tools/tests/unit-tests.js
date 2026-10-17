@@ -156,8 +156,10 @@ t.test("filetypes: extension and kind from the name", function() {
 	assert.strictEqual(FileTypes.extensionOf(".hidden"), "");
 	assert.strictEqual(FileTypes.kindFromName("x.ods"), "ods");
 	assert.strictEqual(FileTypes.kindFromName("x.tsv"), "csv");
-	assert.strictEqual(FileTypes.kindFromName("x.pdf"), "unknown");
+	assert.strictEqual(FileTypes.kindFromName("x.PDF"), "pdf");
 	assert.ok(FileTypes.isDocumentName("a.md"));
+	assert.ok(FileTypes.isDocumentName("a.pdf"), "PDFs are listed, to be handed on");
+	assert.ok(!FileTypes.isSupported("pdf"));
 	assert.ok(!FileTypes.isDocumentName("a.doc"));
 	assert.ok(!FileTypes.isDocumentName("a.mp3"));
 });
@@ -169,6 +171,16 @@ t.test("filetypes: sniffing the first bytes", function() {
 	assert.strictEqual(FileTypes.sniff(bytes("sample.txt")), "text");
 	assert.strictEqual(FileTypes.sniff(new Uint8Array([1, 2, 0, 4, 5])), "binary");
 	assert.strictEqual(FileTypes.sniff(new Uint8Array([0xFF, 0xFE, 0x41, 0x00])), "text");
+});
+
+t.test("filetypes: PDFs are handed to the application/pdf handler, nothing else is", function() {
+	assert.strictEqual(FileTypes.handOffMime("pdf"), "application/pdf");
+	["docx", "xlsx", "txt", "doc", "rtf", "unknown", "", undefined].forEach(function(k) {
+		assert.strictEqual(FileTypes.handOffMime(k), null, String(k));
+	});
+	var pdf = new TextEncoder().encode("%PDF-1.7\n");
+	assert.strictEqual(FileTypes.resolve("report.docx", pdf).kind, "pdf");
+	assert.strictEqual(FileTypes.resolve("report.pdf", pdf).label, "PDF document");
 });
 
 t.test("filetypes: the content wins over a wrong name", function() {
@@ -724,7 +736,7 @@ t.test("engine: binary legacy and PDF files are refused with a clear message", a
 	});
 	await assert.rejects(engine().open({name: "old.doc", buffer: ole.buffer}), /before 2007/);
 	var pdf = new TextEncoder().encode("%PDF-1.4\n...");
-	await assert.rejects(engine().open({name: "x.pdf", buffer: pdf.buffer}), /PDF Viewer/);
+	await assert.rejects(engine().open({name: "x.pdf", buffer: pdf.buffer}), /PDF document, and no app/);
 });
 
 t.test("engine: an edited CSV is saved as CSV with the edits", async function() {

@@ -4,6 +4,7 @@
 		FileService.list("/media/internal", function(err, {dirs, files}) {...});
 		FileService.size(path, function(err, bytes) {...});
 		FileService.openUrl("https://...");            // in the browser (applicationManager/open)
+		FileService.openWith(path, "application/pdf", function(err) {...}); // in the MIME type's app
 		FileService.writeNew(path, bytes, function(err) {...});
 
 	list and size are the File Manager's service
@@ -75,6 +76,23 @@ var FileService = {
 
 	openUrl: function(inUrl, inCallback) {
 		this.call("luna://com.palm.applicationManager/open", {target: inUrl}, inCallback || function() {});
+	},
+
+	/**
+		Opens a local file in the app registered for inMime: the application
+		manager launches that app with {"target": "file://..."}. Fails when
+		no installed app handles the type.
+	*/
+	openWith: function(inPath, inMime, inCallback) {
+		var url = "file://" + encodeURI(inPath).replace(/[?#]/g, encodeURIComponent);
+		var done = inCallback || function() {};
+		this.call("luna://com.palm.applicationManager/open", {target: url, mime: inMime}, function(inErr, inResult) {
+			// luna-appmanager without the fix for its launch replies passes the
+			// launch on to SAM without waiting, and answers {"returnValue": false,
+			// "errorText": ""} for an app that did start; with it, the answer is
+			// SAM's. Either way "No handler for ..." is what a real failure says.
+			done(inErr && !(inResult && inResult.returnValue === false && inResult.errorText === "") ? inErr : null);
+		});
 	},
 
 	/**

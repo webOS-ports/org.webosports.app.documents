@@ -27,7 +27,7 @@ enyo.kind({
 		{name: "pane", kind: "Pane", flex: 1, transitionKind: "enyo.transitions.Simple", onSelectView: "viewSelected", components: [
 			{name: "library", kind: "LibraryView", onOpenDocument: "openDocument", onRefresh: "rescan"},
 			{name: "viewer", kind: "ViewerView", lazy: false, onOpenLink: "openLink", onSaveCopy: "askSaveCopy",
-				onNight: "nightChanged", onOpened: "documentOpened"}
+				onNight: "nightChanged", onOpened: "documentOpened", onHandOff: "handOffFromViewer"}
 		]},
 		{name: "saveDialog", kind: "ModalDialog", caption: $L("Save a Copy"), components: [
 			{name: "saveNote", className: "save-note", content: ""},
@@ -156,9 +156,39 @@ enyo.kind({
 	// --- Viewer ----------------------------------------------------------
 
 	openDocument: function(inSender, inPath) {
+		var mime = FileTypes.handOffMime(FileTypes.kindFromName(inPath));
+		if (mime) {
+			// A PDF goes to the app that shows PDFs; if none answers, the
+			// viewer says why it cannot show it either.
+			var self = this;
+			FileService.openWith(inPath, mime, function(inErr) {
+				if (inErr) {
+					enyo.warn("no app opened " + inPath + " as " + mime + ": " + inErr.message);
+					self.showViewer(inPath);
+				}
+			});
+			return;
+		}
+		this.showViewer(inPath);
+	},
+
+	showViewer: function(inPath) {
 		this.$.library.setHidden(true);
 		this.$.pane.selectViewByName("viewer");
 		this.$.viewer.openPath(inPath);
+	},
+
+	//* The viewer found a file another app shows behind a misleading name (a PDF called ".docx").
+	handOffFromViewer: function(inSender, inPath, inMime) {
+		var self = this;
+		FileService.openWith(inPath, inMime, function(inErr) {
+			if (inErr) {
+				enyo.warn("no app opened " + inPath + " as " + inMime + ": " + inErr.message);
+				self.$.viewer.handOffFailed();
+			} else if (self.$.pane.getViewName() === "viewer" && self.$.viewer.path === inPath) {
+				self.$.pane.selectViewByName("library");
+			}
+		});
 	},
 
 	documentOpened: function(inSender, inPath, inKind) {
