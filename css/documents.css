@@ -1228,3 +1228,73 @@ mark.find-current {
 .docx-editor-mount {
 	min-height: 100%;
 }
+
+/* --- Editing in LibreOffice (LokEditor) -------------------------------- */
+
+.lok-editor {
+	background: #8a8a8a;
+}
+
+.lok-host {
+	position: relative;
+	overflow: auto;
+	-webkit-overflow-scrolling: touch;
+}
+
+.lok-page {
+	position: relative;
+	margin: 8px auto;
+	background: #fff;
+	box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+.lok-tile {
+	position: absolute;
+}
+
+.lok-selection {
+	position: absolute;
+	left: 0;
+	top: 0;
+	pointer-events: none;
+}
+
+.lok-selection-rect {
+	position: absolute;
+	background: rgba(47, 111, 181, 0.3);
+}
+
+.lok-cursor {
+	position: absolute;
+	width: 2px;
+	background: #000;
+	pointer-events: none;
+	animation: lok-blink 1s steps(1) infinite;
+}
+
+@keyframes lok-blink {
+	50% {
+		opacity: 0;
+	}
+}
+
+/* Where the cursor is, invisible: it takes the typing (and a keypad's preedit) */
+.lok-input {
+	position: absolute;
+	left: 0;
+	top: 0;
+	width: 40px;
+	height: 20px;
+	opacity: 0;
+	border: 0;
+	padding: 0;
+	resize: none;
+	font-size: 16px;
+}
+
+.lok-part {
+	color: #f2f2f2;
+	font-size: 14px;
+	padding: 0 6px;
+	white-space: nowrap;
+}

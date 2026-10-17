@@ -21,6 +21,7 @@ enyo.kind({
 			{name: "menuNight", caption: $L("Night Reading"), onclick: "menuNight"},
 			{name: "menuInfo", caption: $L("Document Info"), onclick: "menuInfo"},
 			{name: "menuFreeze", caption: $L("Freeze First Row"), onclick: "menuFreeze"},
+			{name: "menuLok", caption: $L("Edit with LibreOffice"), onclick: "menuLok", showing: false},
 			{name: "menuRefresh", caption: $L("Look for Documents Again"), onclick: "rescan"},
 			{caption: $L("About Documents"), onclick: "showAbout"}
 		]},
@@ -82,6 +83,14 @@ enyo.kind({
 				self.rescan();
 			}
 		});
+		// Editing sessions: a service that has them refuses an open without a document the same way
+		FileService.call("luna://org.webosports.service.office/open", {}, function(inErr) {
+			FileTypes.lokSessions = !!inErr && inErr.code === "badRequest";
+		});
+	},
+
+	menuLok: function() {
+		this.$.viewer.editWithLibreOffice();
 	},
 
 	//* The local path a launch asks for, or null.
@@ -280,6 +289,8 @@ enyo.kind({
 		this.$.menuFind.setDisabled(!inViewer);
 		this.$.menuInfo.setDisabled(!inViewer);
 		this.$.menuFreeze.setShowing(sheet);
+		// LibreOffice edits what it reads, in a session of the office service, when it has them
+		this.$.menuLok.setShowing(inViewer && FileTypes.lokSessions && !this.$.viewer.$.lok.isOpen());
 		this.$.menuFreeze.setCaption(this.prefs.freeze ? $L("Unfreeze First Row") : $L("Freeze First Row"));
 		this.$.menuNight.setCaption(this.prefs.night ? $L("Day Reading") : $L("Night Reading"));
 	},

@@ -245,6 +245,8 @@
 		convertsTo: convertsTo,
 		familyOf: familyOf,
 		converter: false,
+		// Whether the office service keeps documents open for editing (App.findConverter)
+		lokSessions: false,
 		sniff: sniff,
 		looksLikeText: looksLikeText,
 		kindFromZip: kindFromZip,

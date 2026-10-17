@@ -45,6 +45,8 @@ enyo.kind({
 			{name: "sheet", kind: "SheetView", className: "viewer-sheet", showing: false, onDirty: "sheetDirty"},
 			{name: "docx", kind: "DocxEditor", className: "viewer-docx", showing: false, onChanged: "markEdited",
 				onZoomChanged: "updateZoomLabel"},
+			{name: "lok", kind: "LokEditor", className: "viewer-docx", showing: false, onChanged: "lokChanged",
+				onClosed: "lokClosed"},
 			{name: "status", className: "viewer-status", showing: false, components: [
 				{name: "spinner", kind: "SpinnerLarge"},
 				{name: "statusText", className: "viewer-status-text", content: ""}
@@ -297,6 +299,9 @@ enyo.kind({
 		this.docBytes = null;
 		this.$.docx.close();
 		this.$.docx.hide();
+		this.$.lok.close();
+		this.$.lok.hide();
+		this.lokEdited = false;
 		this.$.editButton.hide();
 		this.$.editButton.addRemoveClass("viewer-tool-on", false);
 		this.revokeUrls();
@@ -504,7 +509,7 @@ enyo.kind({
 	updateTools: function() {
 		var has = !!this.doc;
 		// The .docx editor lays out and searches its own pages; the zoom keys work its zoom.
-		var own = has && !this.$.docx.isOpen();
+		var own = has && !this.$.docx.isOpen() && !this.$.lok.isOpen();
 		var reflowable = own && (this.doc.kind === "docx" || this.doc.kind === "odt");
 		this.$.zoomOut.setDisabled(!has);
 		this.$.zoomIn.setDisabled(!has);
@@ -604,12 +609,17 @@ enyo.kind({
 	},
 
 	updateZoomLabel: function() {
-		var docx = this.$.docx.isOpen() ? this.$.docx.zoomPercent() : 0;
+		var docx = this.$.lok.isOpen() ? this.$.lok.zoomPercent() : this.$.docx.isOpen() ? this.$.docx.zoomPercent() : 0;
 		this.$.zoomLabel.setCaption((docx || Math.round(this.zoom * 100)) + "%");
 	},
 
 	stepZoom: function(inDirection) {
 		var steps = this.zoomSteps;
+		if (this.$.lok.isOpen()) {
+			this.$.lok.zoomBy(inDirection > 0 ? 1.25 : 0.8);
+			this.updateZoomLabel();
+			return;
+		}
 		if (this.$.docx.isOpen()) {
 			// The .docx editor's own zoom, by the same steps.
 			this.$.docx.stepZoom(inDirection, steps);
@@ -665,6 +675,11 @@ enyo.kind({
 
 	//* The zoom label: back to fit.
 	zoomFit: function() {
+		if (this.$.lok.isOpen()) {
+			this.$.lok.zoomBy(0);
+			this.updateZoomLabel();
+			return;
+		}
 		if (this.$.docx.isOpen()) {
 			this.$.docx.fitWidth();
 			this.updateZoomLabel();
@@ -997,6 +1012,9 @@ enyo.kind({
 	//* The edits and the format a copy is written in (the document's own; xls as xlsx).
 	saveRequest: function() {
 		var kind = this.doc ? this.doc.kind : "";
+		if (this.$.lok.isOpen()) {
+			return {format: this.$.lok.copyFormat(), lok: true};
+		}
 		if (kind === "odt" || kind === "docx" || kind === "odp" || kind === "pptx") {
 			return {format: kind};
 		}
@@ -1132,11 +1150,79 @@ enyo.kind({
 
 	//* The bytes of the copy: from the .docx editor, else from the engine.
 	makeCopy: function(inRequest, inCallback) {
+		if (inRequest.lok) {
+			this.$.lok.copyBytes(inCallback);
+			return;
+		}
 		if (inRequest.format === "docx") {
 			this.$.docx.copyBytes(inCallback);
 			return;
 		}
 		DocLoader.save(inRequest, inCallback);
+	},
+
+	// --- Editing in LibreOffice (LokEditor.js) -----------------------------
+
+	/**
+		The document in a LibreOffice editing session, in place of the page:
+		any format LibreOffice reads, presentations included. Offered (in
+		the app menu) when the office service has sessions.
+	*/
+	editWithLibreOffice: function() {
+		var self = this, token = this.loadToken;
+		if (!this.doc || !this.path || this.$.lok.isOpen()) {
+			return;
+		}
+		this.closeFind();
+		this.showStatus($L("Opening in LibreOffice\u2026"), true);
+		this.$.lok.open(this.path, function(inErr) {
+			if (token !== self.loadToken) {
+				return;
+			}
+			self.hideStatus();
+			if (inErr) {
+				self.$.lok.close();
+				self.showStatus(inErr.message, false);
+				setTimeout(function() {
+					if (token === self.loadToken) {
+						self.hideStatus();
+					}
+				}, 5000);
+				return;
+			}
+			self.$.scroller.hide();
+			self.$.sheet.hide();
+			self.$.docx.hide();
+			self.$.lok.show();
+			self.$.lok.showPart();
+			self.updateTools();
+		});
+	},
+
+	lokChanged: function() {
+		this.lokEdited = true;
+		this.markEdited();
+	},
+
+	//* Back to the document as it was shown; LibreOffice's edits close with the session
+	closeLok: function() {
+		this.$.lok.close();
+		this.lokClosed();
+	},
+
+	lokClosed: function() {
+		this.$.lok.hide();
+		if (this.lokEdited) {
+			this.lokEdited = false;
+			this.edited = false;
+			this.$.saveButton.hide();
+			this.resized();
+		}
+		var sheet = this.doc && this.doc.family === "sheet";
+		this.$.sheet.setShowing(!!sheet);
+		this.$.scroller.setShowing(!sheet && !this.$.docx.isOpen());
+		this.$.docx.setShowing(this.$.docx.isOpen());
+		this.updateTools();
 	},
 
 	leaveEdit: function() {
@@ -1463,6 +1549,10 @@ enyo.kind({
 			return true;
 		}
 		if (this.cancelParagraph()) {
+			return true;
+		}
+		if (this.$.lok.isOpen()) {
+			this.closeLok();
 			return true;
 		}
 		if (this.editMode && this.$.docx.isOpen()) {

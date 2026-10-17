@@ -20,6 +20,7 @@ enyo.depends(
 	"source/views/SheetGrid.js",
 	"source/views/SheetView.js",
 	"source/views/DocxEditor.js",
+	"source/views/LokEditor.js",
 	"source/views/ViewerView.js",
 	"source/views/LibraryView.js",
 	"source/App.js",

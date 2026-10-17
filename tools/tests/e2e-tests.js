@@ -34,6 +34,17 @@ var server, browser, page;
 function makeE2eRoot() {
 	fs.rmSync(E2E_ROOT, {recursive: true, force: true});
 	fs.mkdirSync(path.join(E2E_ROOT, "Work"), {recursive: true});
+	// What the office service's editing session hands out: a 256 px tile, all one colour, and a saved copy
+	fs.mkdirSync(path.join(E2E_ROOT, ".cache"), {recursive: true});
+	var tile = Buffer.alloc(256 * 256 * 4);
+	for (var px = 0; px < tile.length; px += 4) {
+		tile[px] = 10;
+		tile[px + 1] = 200;
+		tile[px + 2] = 30;
+		tile[px + 3] = 255;
+	}
+	fs.writeFileSync(path.join(E2E_ROOT, ".cache", "tile.raw"), tile);
+	fs.copyFileSync(path.join(FIX, "sample.pptx"), path.join(E2E_ROOT, ".cache", "saved.pptx"));
 	// A big sheet: 20000 rows, for the grid's virtualisation.
 	var lines = ["Id,Name,Value"];
 	for (var i = 1; i <= 20000; i++) {
@@ -104,8 +115,35 @@ function scenario(inOptions) {
 		"luna://org.webosports.service.office/convert": o.office ? {cases: [
 			{when: {source: "/media/internal/legacy.doc", format: "odt"}, json: {target: "/media/internal/sample.odt", format: "odt", cached: false}}
 		], error: {errorCode: "badRequest", errorText: "source and format are required"}} :
+			{error: {errorCode: -1, errorText: "Service does not exist: org.webosports.service.office."}},
+		// Its editing sessions (o.lok): a service with them refuses an open without a document
+		"luna://org.webosports.service.office/open": o.lok ? {cases: [
+			{when: {source: "/media/internal/sample.pptx"}, json: {session: "s1", kind: "presentation", parts: 2, part: 0,
+				width: 28000, height: 15750, tileMode: "rgba"}}
+		], error: {errorCode: "badRequest", errorText: "need \"source\" (a path)"}} :
+			o.office ? {error: {errorCode: -1, errorText: "Unknown method \"open\" for category \"/\""}} :
 			{error: {errorCode: -1, errorText: "Service does not exist: org.webosports.service.office."}}
 	};
+	if (o.lok) {
+		var ok = {json: {}};
+		Object.assign(luna, {
+			// The subscription's answer, then LibreOffice's callbacks
+			"luna://org.webosports.service.office/events": {responses: [
+				{json: {subscribed: true}},
+				{delay: 400, json: {session: "s1", event: "cursor", type: 1, payload: "1440, 1440, 0, 400"}},
+				{delay: 100, json: {session: "s1", event: "state", type: 8, payload: ".uno:Bold=true"}},
+				{delay: 100, json: {session: "s1", event: "invalidate", type: 0, payload: "0, 0, 5000, 5000, 0"}}
+			]},
+			"luna://org.webosports.service.office/paintTile": {json: {file: "/media/internal/.cache/tile.raw", tileMode: "rgba"}},
+			"luna://org.webosports.service.office/postMouse": ok,
+			"luna://org.webosports.service.office/postKey": ok,
+			"luna://org.webosports.service.office/extTextInput": ok,
+			"luna://org.webosports.service.office/uno": ok,
+			"luna://org.webosports.service.office/setPart": {json: {parts: 2, part: 1, width: 28000, height: 15750}},
+			"luna://org.webosports.service.office/save": {json: {target: "/media/internal/.cache/saved.pptx"}},
+			"luna://org.webosports.service.office/close": ok
+		});
+	}
 	Object.assign(luna, o.luna || {});
 	return {
 		webos: true,
@@ -114,7 +152,7 @@ function scenario(inOptions) {
 		luna: luna,
 		acg: acg(),
 		rewrite: [
-			{from: "^file:///media/internal/(big\\.csv|legacy\\.doc|Manual(%20| )1\\.pdf|scan\\.docx|Work/)", to: server.url + "/test-output/e2e-root/$1"},
+			{from: "^file:///media/internal/(big\\.csv|legacy\\.doc|Manual(%20| )1\\.pdf|scan\\.docx|Work/|\\.cache/)", to: server.url + "/test-output/e2e-root/$1"},
 			{from: "^file:///media/internal/", to: server.url + "/tools/tests/fixtures/"}
 		],
 		http: [],
@@ -790,6 +828,75 @@ t.test("conversion: without the service a .doc is not listed, and opened it says
 	assert.strictEqual(await page.eval("FileTypes.converter"), false);
 	assert.strictEqual(await openDoc("/media/internal/legacy.doc"), "error");
 	assert.ok(/binary format from before 2007/.test(await page.eval("documentsApp.$.viewer.$.statusText.content")));
+});
+
+t.test("LibreOffice editing: a session's tiles, taps, typing, Bold, the next slide and a copy", async function() {
+	await open(scenario({service: true, office: true, lok: true}));
+	await page.waitFor("FileTypes.lokSessions === true", 10000);
+	await openDoc("/media/internal/sample.pptx");
+	await page.eval("documentsApp.$.appMenu.open(); 1");
+	await page.waitFor("documentsApp.$.appMenu.isOpen");
+	assert.strictEqual(await page.eval("documentsApp.$.menuLok.showing"), true, "offered in the app menu");
+	await tapControl("documentsApp.$.menuLok");
+	await page.waitFor("documentsApp.$.viewer.$.lok.isOpen() && documentsApp.$.viewer.$.lok.showing", 10000);
+	// A tile is asked for and drawn
+	await page.waitFor("(function(){var c=document.querySelector('.lok-tile'); if(!c) return false; " +
+		"var d=c.getContext('2d').getImageData(10,10,1,1).data; return d[0]===10 && d[1]===200 && d[2]===30;})()", 10000);
+	var paints = await calls("luna", "service.office/paintTile");
+	assert.ok(paints.length > 0 && paints[0].params.session === "s1" && paints[0].params.part === 0 &&
+		paints[0].params.pixelWidth === 256, JSON.stringify(paints[0] && paints[0].params));
+	// The events: the cursor drawn, Bold shown as on
+	await page.waitFor("document.querySelector('.lok-cursor').style.display !== 'none'", 5000);
+	await page.waitFor("documentsApp.$.viewer.$.lok.$.bold.hasClass('viewer-tool-on')", 5000);
+	// A tap on the page: a click in LibreOffice's twips
+	await page.tap(".lok-page");
+	await page.waitFor("__MOCK__.calls.filter(function(c){return /postMouse/.test(c.url)}).length >= 2", 5000);
+	var mouse = await calls("luna", "service.office/postMouse");
+	assert.strictEqual(mouse[0].params.type, "down");
+	assert.strictEqual(mouse[1].params.type, "up");
+	assert.ok(mouse[0].params.x > 0 && mouse[0].params.y > 0 && mouse[0].params.x < 28000, JSON.stringify(mouse[0].params));
+	// Typing: the text box takes it and sends it as committed text
+	await page.eval("document.querySelector('.lok-input').focus(); 1");
+	await page.send("Input.insertText", {text: "Hi"});
+	await page.waitFor("__MOCK__.calls.some(function(c){return /extTextInput/.test(c.url) && c.params.text === 'Hi' && c.params.type === 'commit'})", 5000);
+	// Bold, through the key bar
+	await page.eval("documentsApp.$.viewer.$.lok.uno(documentsApp.$.viewer.$.lok.$.bold); 1");
+	var unos = await calls("luna", "service.office/uno");
+	assert.ok(unos.some(function(u) {
+		return u.params.command === ".uno:Bold";
+	}), JSON.stringify(unos));
+	// The next slide
+	assert.strictEqual(await page.eval("documentsApp.$.viewer.$.lok.$.partLabel.content"), "1 of 2");
+	await page.eval("documentsApp.$.viewer.$.lok.nextPart(); 1");
+	await page.waitFor("documentsApp.$.viewer.$.lok.$.partLabel.content === '2 of 2'", 5000);
+	// Save a Copy: the session's saved file, next to the original
+	await page.waitFor("documentsApp.$.viewer.$.saveButton.showing", 5000);
+	await page.eval("documentsApp.$.viewer.saveCopy(); 1");
+	await page.waitFor("documentsApp.$.saveDialog.isOpen");
+	assert.strictEqual(await page.eval("documentsApp.$.saveName.getValue()"), "sample (edited).pptx");
+	await page.eval("documentsApp.doSave(); 1");
+	await page.waitFor("!documentsApp.$.saveDialog.isOpen", 10000);
+	var w = await calls("luna", "service/writeNew");
+	assert.strictEqual(w[0].params.path, "/media/internal/sample (edited).pptx");
+	assert.ok(Buffer.from(w[0].params.data, "base64").equals(fs.readFileSync(path.join(FIX, "sample.pptx"))), "the saved bytes");
+	// Back: the session is closed, the slides shown again
+	await page.eval("documentsApp.$.viewer.back(); 1");
+	assert.strictEqual(await page.eval("documentsApp.$.viewer.$.lok.isOpen()"), false);
+	assert.ok((await calls("luna", "service.office/close")).length === 1);
+	assert.strictEqual(await page.eval("documentsApp.$.viewer.$.scroller.showing"), true);
+	if (SHOTS) {
+		await page.screenshot(path.join(OUT, "shots", "lok-closed.png"));
+	}
+});
+
+t.test("LibreOffice editing: not offered by a service without sessions", async function() {
+	await open(scenario({service: true, office: true}));
+	await page.waitFor("FileTypes.converter === true", 10000);
+	await openDoc("/media/internal/sample.pptx");
+	await page.eval("new Promise(function(r){setTimeout(r, 300);})");
+	await page.eval("documentsApp.$.appMenu.open(); 1");
+	await page.waitFor("documentsApp.$.appMenu.isOpen");
+	assert.strictEqual(await page.eval("documentsApp.$.menuLok.showing"), false);
 });
 
 // --- Layouts ------------------------------------------------------------------------
