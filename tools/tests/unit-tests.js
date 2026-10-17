@@ -784,7 +784,7 @@ t.test("service: refuses paths outside the root, hidden names and other types", 
 });
 
 t.test("service: writes copies of every format the app edits", function() {
-	["c.xlsx", "c.ods", "c.csv", "c.odt", "c.docx", "c.txt", "c.md"].forEach(function(n) {
+	["c.xlsx", "c.ods", "c.csv", "c.odt", "c.docx", "c.pptx", "c.odp", "c.txt", "c.md"].forEach(function(n) {
 		var r = writer.writeNew(tmpRoot, tmpRoot + n, Buffer.from("x").toString("base64"));
 		assert.strictEqual(r.returnValue, true, n);
 	});

@@ -829,7 +829,9 @@ enyo.kind({
 
 	/**
 		inNode brought into view, a third down the screen; or (inAtBottom) its
-		bottom at the bottom of the screen, for a box under what it edits.
+		bottom a sixth of the screen above the bottom, for a box under what it
+		edits: clear of the toolbar and the gesture area, with as much as fits of
+		what it edits above it.
 	*/
 	scrollToNode: function(inNode, inAtBottom) {
 		if (!inNode) {
@@ -842,7 +844,7 @@ enyo.kind({
 		var y = r.top - c.top, x = r.left - c.left;
 		// The boundaries are the scroll positions' limits (Enyo's BasicScroller), not the content's size.
 		var b = s.getBoundaries();
-		var top = Math.max(0, Math.min(b.bottom, inAtBottom ? y + r.height + 12 - v.height : y - v.height / 3));
+		var top = Math.max(0, Math.min(b.bottom, inAtBottom ? y + r.height + Math.max(24, v.height / 6) - v.height : y - v.height / 3));
 		var left = s.scrollLeft;
 		if (x < left || x + r.width > left + v.width) {
 			left = Math.max(0, Math.min(b.right, x - v.width / 3));
