@@ -16,6 +16,7 @@ enyo.depends(
 	"source/services/DocLoader.js",
 	"source/services/FileService.js",
 	"source/views/DocRender.js",
+	"source/views/DialogFit.js",
 	"source/views/Finder.js",
 	"source/views/SheetGrid.js",
 	"source/views/SheetView.js",

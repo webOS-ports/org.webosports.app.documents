@@ -40,10 +40,16 @@ enyo.kind({
 				{name: "saveOk", kind: "ActivityButton", flex: 1, className: "enyo-button-affirmative", caption: $L("Save"), onclick: "doSave"}
 			]}
 		]},
-		{name: "about", kind: "ModalDialog", caption: $L("About Documents"), components: [
-			{name: "aboutText", className: "about-text", allowHtml: true, content: ""},
-			{kind: "Button", caption: $L("OK"), onclick: "closeAbout"}
-		]},
+		// As Document Info: the name, a line under it, the text scrolling within the screen, and OK below
+		{name: "about", kind: "ModalDialog", caption: $L("Documents"), className: "enyo-popup enyo-modaldialog viewer-info-dialog",
+			components: [
+				{name: "aboutVersion", className: "viewer-info-subtitle", content: ""},
+				{name: "aboutScroller", kind: "Scroller", className: "viewer-info-scroller", horizontal: false, autoHorizontal: false,
+					components: [
+						{name: "aboutText", className: "about-text", allowHtml: true, content: ""}
+					]},
+				{kind: "Button", caption: $L("OK"), onclick: "closeAbout"}
+			]},
 		{name: "toaster", className: "documents-toast", showing: false}
 	],
 
@@ -394,13 +400,31 @@ enyo.kind({
 	// --- About -----------------------------------------------------------
 
 	showAbout: function() {
-		this.$.about.openAtCenter();
+		var about = this.$.about;
+		var info = enyo.fetchAppInfo && enyo.fetchAppInfo();
+		var e = enyo.string.escapeHtml;
+		// Filled in before it opens: it is centred on the size it has then.
+		about.validateComponents();
+		this.$.aboutVersion.setContent(info && info.version ? $L("Version #{v}").replace("#{v}", info.version) : "");
 		this.$.aboutText.setContent(
-			"<p>" + enyo.string.escapeHtml($L("Reads Word (.docx), OpenDocument (.odt, .ods, .odp), Excel (.xlsx, .xls), " +
+			"<p>" + e($L("Reads Word (.docx), OpenDocument (.odt, .ods, .odp), Excel (.xlsx, .xls), " +
 				"PowerPoint (.pptx), CSV, text and Markdown files.")) + "</p>" +
-			"<p>" + enyo.string.escapeHtml($L("Built with docx-preview (Apache 2.0), SheetJS Community Edition (Apache 2.0), " +
+			(FileTypes.converter ? "<p>" + e($L("With LibreOffice's service: older Word, PowerPoint and RTF files too, " +
+				"and editing in LibreOffice.")) + "</p>" : "") +
+			"<p>" + e($L("Built with docx-preview (Apache 2.0), SheetJS Community Edition (Apache 2.0), " +
 				"JSZip (MIT), HyperFormula (GPLv3) and SuperDoc (AGPLv3).")) + "</p>" +
-			"<p>" + enyo.string.escapeHtml($L("Licensed under the GNU General Public License version 3. WebOS Ports.")) + "</p>");
+			"<p>" + e($L("Licensed under the GNU General Public License version 3. WebOS Ports.")) + "</p>");
+		this.$.aboutScroller.applyStyle("height", null);
+		about.openAtCenter();
+		DialogFit.fit(about, this.$.aboutScroller, this.$.aboutText);
+	},
+
+	resizeHandler: function() {
+		this.inherited(arguments);
+		// A notification or the keyboard changes the room the text has
+		if (this.$.about.isOpen) {
+			DialogFit.fit(this.$.about, this.$.aboutScroller, this.$.aboutText);
+		}
 	},
 
 	closeAbout: function() {

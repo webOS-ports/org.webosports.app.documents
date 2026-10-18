@@ -505,6 +505,23 @@ t.test("document info: opened first on a small screen, it fits and is centred, a
 	await key("Escape");
 });
 
+t.test("about: on a small screen it fits, is centred and shows its button", async function() {
+	await open(scenario(), {width: 450, height: 380});
+	await page.eval("documentsApp.showAbout(); 1");
+	await page.waitFor("documentsApp.$.about.isOpen");
+	var m = JSON.parse(await page.eval("(function(){var d=documentsApp.$.about.hasNode().getBoundingClientRect(); " +
+		"var b=documentsApp.$.about.hasNode().querySelector('.enyo-button').getBoundingClientRect(); " +
+		"return JSON.stringify({top:d.top, bottom:d.bottom, h:innerHeight, ok:b.bottom, text:documentsApp.$.about.hasNode().textContent});})()"));
+	assert.ok(m.top >= 0 && m.bottom <= m.h && m.ok <= m.h, "inside the window, OK too: " + JSON.stringify(m));
+	assert.ok(Math.abs(m.top - (m.h - m.bottom)) <= 2, "centred: " + JSON.stringify(m));
+	assert.ok(/Version 0\.1\.0/.test(m.text) && /GNU General Public License/.test(m.text), m.text);
+	if (SHOTS) {
+		await page.eval("new Promise(function(r){setTimeout(r, 600);})");
+		await page.screenshot(path.join(OUT, "shots", "about-small.png"));
+	}
+	await page.eval("documentsApp.closeAbout(); 1");
+});
+
 // --- Spreadsheets ---------------------------------------------------------------------
 
 t.test("sheet: cells, number alignment, frozen header row, sheet tabs", async function() {

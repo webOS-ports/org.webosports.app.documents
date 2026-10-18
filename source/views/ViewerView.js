@@ -1008,16 +1008,7 @@ enyo.kind({
 
 	//* The groups as tall as they are, or as fit the screen with the rest of the dialog; centred again
 	fitInfo: function() {
-		var dialog = this.$.infoDialog, d = dialog.hasNode(), sc = this.$.infoScroller.hasNode(), g = this.$.infoGroups.hasNode();
-		if (!dialog.isOpen || !d || !sc || !g) {
-			return;
-		}
-		var margin = 12;
-		var chrome = d.offsetHeight - sc.offsetHeight;
-		var room = Math.max(60, window.innerHeight - 2 * margin - chrome);
-		this.$.infoScroller.applyStyle("height", Math.min(g.offsetHeight, room) + "px");
-		this.$.infoScroller.resized();
-		dialog.applyBoundsInfo();
+		DialogFit.fit(this.$.infoDialog, this.$.infoScroller, this.$.infoGroups);
 	},
 
 	//* "LibreOffice/26.2.6.3$Linux_X86_64 LibreOffice_project/..." as "LibreOffice 26.2.6.3"
