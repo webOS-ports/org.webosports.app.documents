@@ -574,8 +574,9 @@ enyo.kind({
 
 	/*
 	 * A long press at a point of the screen. On the selection it is kept;
-	 * anywhere else the word there is selected (a double click, as a
-	 * double tap does). Then the edit menu opens there.
+	 * anywhere else the word there is selected: a double click, which
+	 * LibreOffice takes only as a click and then a second one (a click
+	 * counted 2 on its own selects nothing). Then the edit menu opens there.
 	 */
 	longPress: function(inX, inY) {
 		var s = this.session;
@@ -592,6 +593,7 @@ enyo.kind({
 			return x >= n[0] && x <= n[0] + n[2] && y >= n[1] && y <= n[1] + n[3];
 		});
 		if (!onSelection) {
+			this.tap(inX, inY, 1);
 			this.tap(inX, inY, 2);
 		}
 		this.$.editMenu.openAt({left: inX, top: inY}, true);

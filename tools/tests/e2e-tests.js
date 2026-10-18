@@ -951,7 +951,9 @@ t.test("LibreOffice editing: a long press selects the word and offers cut, copy 
 	await page.send("Input.dispatchTouchEvent", {type: "touchEnd", touchPoints: []});
 	await page.waitFor("documentsApp.$.viewer.$.lok.$.editMenu.isOpen", 5000);
 	var mouse = (await calls("luna", "service.office/postMouse")).slice(mice);
-	assert.ok(mouse.length === 2 && mouse[0].params.count === 2 && mouse[1].params.count === 2, "a double click only: " + JSON.stringify(mouse));
+	assert.deepStrictEqual(mouse.map(function(c) {
+		return c.params.type + c.params.count;
+	}), ["down1", "up1", "down2", "up2"], "a double click (a click, then one counted 2), and no tap besides");
 	var items = await page.eval("documentsApp.$.viewer.$.lok.$.editMenu.getControls().map(function(c){return c.caption;}).join(',')");
 	assert.ok(/Cut/.test(items) && /Copy/.test(items) && /Paste/.test(items), items);
 	if (SHOTS) {
