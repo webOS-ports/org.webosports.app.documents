@@ -254,7 +254,9 @@ client permissions lack `applicationinstall.interface`, so that call is
 refused and such a package can be installed once but neither updated
 nor removed. appinstalld2 2e06f07 asks for the group again; once images
 carry it, the service can be in every build. A system install by a
-recipe does not go through appinstalld and can include it.
+recipe does not go through appinstalld and can include it; the bus
+files appinstalld would write for the service are in `files/sysbus`,
+and the recipe installs them from there.
 
 Install on a device (appInstallService, opkg with its own root, so
 system packages are not touched):
