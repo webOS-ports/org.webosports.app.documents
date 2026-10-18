@@ -62,9 +62,15 @@ enyo.kind({
 			{kind: "ToolButton", name: "infoButton", className: "viewer-tool", icon: "images/info.svg", onclick: "showInfo"},
 			{kind: "ToolButton", name: "editButton", className: "viewer-tool", icon: "images/edit.svg", onclick: "toggleEdit", showing: false}
 		]},
-		{name: "infoDialog", kind: "ModalDialog", caption: $L("Document Info"), components: [
-			{name: "infoText", className: "viewer-info", allowHtml: true, content: ""},
-			{kind: "Button", caption: $L("Close"), onclick: "closeInfo"}
+		// Laid out as the Wi-Fi settings' network info: the name, a line under it, the details
+		// in groups that scroll within the screen, and Done below them.
+		{name: "infoDialog", kind: "ModalDialog", className: "enyo-popup enyo-modaldialog viewer-info-dialog", components: [
+			{name: "infoSubtitle", className: "viewer-info-subtitle", content: ""},
+			{name: "infoScroller", kind: "Scroller", className: "viewer-info-scroller", horizontal: false, autoHorizontal: false,
+				components: [
+					{name: "infoGroups", className: "viewer-info"}
+				]},
+			{kind: "Button", caption: $L("Done"), onclick: "closeInfo"}
 		]},
 		{name: "linkDialog", kind: "ModalDialog", caption: $L("Open Link?"), components: [
 			{name: "linkText", className: "viewer-linktext", content: ""},
@@ -732,6 +738,10 @@ enyo.kind({
 		if (this.doc && this.fitMode) {
 			this.applyLayout();
 		}
+		// A notification or the keyboard changes the room the info has
+		if (this.$.infoDialog.isOpen) {
+			this.fitInfo();
+		}
 	},
 
 	// --- Night -----------------------------------------------------------
@@ -947,31 +957,79 @@ enyo.kind({
 		}
 		var d = this.doc;
 		var meta = d.meta || {};
-		var rows = [
-			[$L("File"), this.fileName],
-			[$L("Folder"), DocLibrary.dirName(this.path)],
-			[$L("Type"), FileTypes.kinds[d.kind] ? FileTypes.kinds[d.kind].label : d.kind],
-			[$L("Size"), DocLibrary.formatSize(this.size)],
-			[$L("Title"), meta.title],
-			[$L("Author"), meta.author],
-			[$L("Subject"), meta.subject],
-			[$L("Created"), meta.created],
-			[$L("Modified"), meta.modified],
-			[$L("Pages"), meta.pages],
-			[$L("Words"), meta.words],
-			[$L("Encoding"), meta.encoding],
-			[$L("Separator"), meta.delimiter],
-			[$L("Opened in"), this.timings.total ? this.timings.total + " ms" : ""]
+		var groups = [
+			[$L("File"), [
+				[$L("Folder"), DocLibrary.dirName(this.path).replace(/^\/media\/internal/, $L("USB storage"))],
+				[$L("Size"), DocLibrary.formatSize(this.size)],
+				[$L("Opened in"), this.timings.total ? this.timings.total + " ms" : ""]
+			]],
+			[$L("Document"), [
+				[$L("Title"), meta.title],
+				[$L("Subject"), meta.subject],
+				[$L("Description"), meta.description],
+				[$L("Author"), meta.author],
+				[$L("Created by"), meta.createdBy],
+				[$L("Created"), this.infoDate(meta.created)],
+				[$L("Modified by"), meta.modifiedBy],
+				[$L("Modified"), this.infoDate(meta.modified)],
+				[$L("Pages"), meta.pages],
+				[$L("Words"), meta.words],
+				[$L("Encoding"), meta.encoding],
+				[$L("Separator"), meta.delimiter],
+				[$L("Made with"), this.infoGenerator(meta.generator)]
+			]]
 		];
-		var html = "<table>";
-		for (var i = 0; i < rows.length; i++) {
-			if (rows[i][1] !== undefined && rows[i][1] !== null && rows[i][1] !== "") {
-				html += "<tr><th>" + enyo.string.escapeHtml(rows[i][0]) + "</th><td>" + enyo.string.escapeHtml(String(rows[i][1])) + "</td></tr>";
+		var dialog = this.$.infoDialog;
+		// Filled in before it opens: it is centred on the size it has then.
+		dialog.validateComponents();
+		dialog.setCaption(this.fileName);
+		this.$.infoSubtitle.setContent(this.describe());
+		this.$.infoGroups.destroyControls();
+		for (var g = 0; g < groups.length; g++) {
+			var rows = [];
+			for (var i = 0; i < groups[g][1].length; i++) {
+				var v = groups[g][1][i][1];
+				if (v !== undefined && v !== null && v !== "") {
+					rows.push({kind: enyo.HFlexBox, className: "viewer-info-row", components: [
+						{className: "viewer-info-label", content: groups[g][1][i][0]},
+						{flex: 1, className: "viewer-info-value", content: String(v)}
+					]});
+				}
+			}
+			if (rows.length) {
+				this.$.infoGroups.createComponent({kind: "RowGroup", caption: groups[g][0], components: rows});
 			}
 		}
-		html += "</table>";
-		this.$.infoDialog.openAtCenter();
-		this.$.infoText.setContent(html);
+		this.$.infoGroups.render();
+		this.$.infoScroller.applyStyle("height", null);
+		dialog.openAtCenter();
+		this.fitInfo();
+	},
+
+	//* The groups as tall as they are, or as fit the screen with the rest of the dialog; centred again
+	fitInfo: function() {
+		var dialog = this.$.infoDialog, d = dialog.hasNode(), sc = this.$.infoScroller.hasNode(), g = this.$.infoGroups.hasNode();
+		if (!dialog.isOpen || !d || !sc || !g) {
+			return;
+		}
+		var margin = 12;
+		var chrome = d.offsetHeight - sc.offsetHeight;
+		var room = Math.max(60, window.innerHeight - 2 * margin - chrome);
+		this.$.infoScroller.applyStyle("height", Math.min(g.offsetHeight, room) + "px");
+		this.$.infoScroller.resized();
+		dialog.applyBoundsInfo();
+	},
+
+	//* "LibreOffice/26.2.6.3$Linux_X86_64 LibreOffice_project/..." as "LibreOffice 26.2.6.3"
+	infoGenerator: function(inValue) {
+		var m = /^([^\/$]+)\/([^\s$]+)/.exec(inValue || "");
+		return m ? m[1] + " " + m[2] : inValue;
+	},
+
+	//* A date as the document stores it (ISO 8601), in the device's own words; anything else as it is
+	infoDate: function(inValue) {
+		var t = inValue ? Date.parse(inValue) : NaN;
+		return isNaN(t) ? inValue : new Date(t).toLocaleString();
 	},
 
 	closeInfo: function() {

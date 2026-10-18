@@ -465,10 +465,44 @@ t.test("document info: title, author, type and size", async function() {
 	await openDoc("/media/internal/sample.odt");
 	await page.tap(".viewer-toolbar .viewer-tool:nth-child(7)");
 	await page.waitFor("documentsApp.$.viewer.$.infoDialog.isOpen");
-	var info = await page.eval("documentsApp.$.viewer.$.infoText.hasNode().textContent");
-	assert.ok(/Fixture Text/.test(info) && /Documents tests/.test(info) && /OpenDocument text/.test(info) && /KB/.test(info), info);
+	var info = await page.eval("documentsApp.$.viewer.$.infoDialog.hasNode().textContent");
+	assert.ok(/sample\.odt/.test(info) && /Fixture Text/.test(info) && /Documents tests/.test(info) &&
+		/OpenDocument text/.test(info) && /KB/.test(info), info);
 	await key("Escape");
 	assert.ok(!(await page.eval("documentsApp.$.viewer.$.infoDialog.isOpen")), "back closes the dialog first");
+});
+
+t.test("document info: opened first on a small screen, it fits and is centred, all of it reachable", async function() {
+	await open(scenario(), {width: 450, height: 380});
+	await openDoc("/media/internal/sample.odt");
+	await page.eval("documentsApp.$.viewer.showInfo(); 1");
+	await page.waitFor("documentsApp.$.viewer.$.infoDialog.isOpen");
+	var m = JSON.parse(await page.eval("(function(){var d=documentsApp.$.viewer.$.infoDialog.hasNode().getBoundingClientRect(); " +
+		"var b=documentsApp.$.viewer.$.infoDialog.hasNode().querySelector('.enyo-button').getBoundingClientRect(); " +
+		"var sc=documentsApp.$.viewer.$.infoScroller; var g=documentsApp.$.viewer.$.infoGroups.hasNode(); " +
+		"return JSON.stringify({top:d.top, bottom:d.bottom, left:d.left, right:d.right, h:innerHeight, w:innerWidth, " +
+		"done:b.bottom, rows:g.querySelectorAll('.viewer-info-row').length, groups:g.offsetHeight, room:sc.hasNode().offsetHeight});})()"));
+	if (SHOTS) {
+		await page.eval("new Promise(function(r){setTimeout(r, 600);})");
+		await page.screenshot(path.join(OUT, "shots", "info-small-open.png"));
+	}
+	assert.ok(m.top >= 0 && m.bottom <= m.h && m.done <= m.h, "inside the window, Done too: " + JSON.stringify(m));
+	assert.ok(Math.abs(m.top - (m.h - m.bottom)) <= 2, "centred: " + JSON.stringify(m));
+	assert.ok(m.rows >= 6, "the rows: " + JSON.stringify(m));
+	var info = await page.eval("documentsApp.$.viewer.$.infoGroups.hasNode().textContent");
+	assert.ok(/LibreOffice 26\.2\.6\.3/.test(info) && !/\$/.test(info), "the generator, readable: " + info);
+	// More than fits: the groups scroll inside the dialog, and the last row can be reached
+	assert.ok(m.groups > m.room, "taller than the room: " + JSON.stringify(m));
+	await page.eval("documentsApp.$.viewer.$.infoScroller.scrollToBottom(); 1");
+	await page.eval("new Promise(function(r){setTimeout(r, 800);})");
+	var last = JSON.parse(await page.eval("(function(){var r=documentsApp.$.viewer.$.infoGroups.hasNode().querySelectorAll('.viewer-info-row'); " +
+		"var l=r[r.length-1].getBoundingClientRect(); var s=documentsApp.$.viewer.$.infoScroller.hasNode().getBoundingClientRect(); " +
+		"return JSON.stringify({top:l.top, bottom:l.bottom, st:s.top, sb:s.bottom});})()"));
+	assert.ok(last.top >= last.st - 1 && last.bottom <= last.sb + 1, "the last row scrolled into view: " + JSON.stringify(last));
+	if (SHOTS) {
+		await page.screenshot(path.join(OUT, "shots", "info-small.png"));
+	}
+	await key("Escape");
 });
 
 // --- Spreadsheets ---------------------------------------------------------------------

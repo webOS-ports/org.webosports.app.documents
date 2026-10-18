@@ -314,23 +314,41 @@
 	background: rgba(255, 255, 255, 0.18);
 }
 
-.viewer-info table {
-	width: 100%;
-	border-collapse: collapse;
-	font-size: 14px;
+/* Document Info, after the Wi-Fi settings' network info: name, a line, groups, Done */
+.viewer-info-dialog .enyo-modaldialog-title {
+	font-weight: bold;
+	word-break: break-word;
 }
 
-.viewer-info th {
-	text-align: left;
-	vertical-align: top;
+.viewer-info-subtitle {
+	text-align: center;
 	color: #666;
-	font-weight: normal;
-	padding: 3px 10px 3px 0;
+	font-size: 14px;
+	margin: -4px 0 8px;
+	word-break: break-word;
+}
+
+.viewer-info-scroller {
+	margin-bottom: 10px;
+}
+
+.viewer-info .enyo-group {
+	margin: 0 0 10px;
+}
+
+.viewer-info-row {
+	font-size: 15px;
+	align-items: baseline;
+}
+
+.viewer-info-label {
+	color: #555;
+	padding-right: 12px;
 	white-space: nowrap;
 }
 
-.viewer-info td {
-	padding: 3px 0;
+.viewer-info-value {
+	text-align: right;
 	word-break: break-word;
 }
 
