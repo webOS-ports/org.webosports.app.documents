@@ -936,6 +936,42 @@ t.test("LibreOffice editing: a session's tiles, taps, typing, Bold, the next sli
 	}
 });
 
+t.test("LibreOffice editing: a long press selects the word and offers cut, copy and paste", async function() {
+	await open(scenario({service: true, office: true, lok: true}));
+	await page.waitFor("FileTypes.lokSessions === true", 10000);
+	await openDoc("/media/internal/sample.pptx");
+	await page.eval("documentsApp.$.viewer.editWithLibreOffice(); 1");
+	await page.waitFor("documentsApp.$.viewer.$.lok.isOpen() && !!document.querySelector('.lok-tile')", 10000);
+	var p = JSON.parse(await page.eval("(function(){var r=document.querySelector('.lok-page').getBoundingClientRect(); " +
+		"return JSON.stringify([Math.round(r.left + 60), Math.round(r.top + 40)]);})()"));
+	var mice = (await calls("luna", "service.office/postMouse")).length;
+	// Held, as a finger does: no tap, but a double click (the word), and the menu
+	await page.send("Input.dispatchTouchEvent", {type: "touchStart", touchPoints: [{x: p[0], y: p[1]}]});
+	await page.eval("new Promise(function(r){setTimeout(r, 700);})");
+	await page.send("Input.dispatchTouchEvent", {type: "touchEnd", touchPoints: []});
+	await page.waitFor("documentsApp.$.viewer.$.lok.$.editMenu.isOpen", 5000);
+	var mouse = (await calls("luna", "service.office/postMouse")).slice(mice);
+	assert.ok(mouse.length === 2 && mouse[0].params.count === 2 && mouse[1].params.count === 2, "a double click only: " + JSON.stringify(mouse));
+	var items = await page.eval("documentsApp.$.viewer.$.lok.$.editMenu.getControls().map(function(c){return c.caption;}).join(',')");
+	assert.ok(/Cut/.test(items) && /Copy/.test(items) && /Paste/.test(items), items);
+	if (SHOTS) {
+		await page.screenshot(path.join(OUT, "shots", "lok-edit-menu.png"));
+	}
+	// Copy: LibreOffice's own
+	var copy = await page.eval("(function(){var m=documentsApp.$.viewer.$.lok.$.editMenu; var c=m.getControls().filter(function(x){return x.caption==='Copy';})[0]; " +
+		"var r=c.hasNode().getBoundingClientRect(); return {x:r.left+r.width/2, y:r.top+r.height/2};})()");
+	await page.send("Input.dispatchMouseEvent", {type: "mousePressed", x: copy.x, y: copy.y, button: "left", clickCount: 1});
+	await page.send("Input.dispatchMouseEvent", {type: "mouseReleased", x: copy.x, y: copy.y, button: "left", clickCount: 1});
+	await page.waitFor("__MOCK__.calls.some(function(c){return /service.office\\/uno/.test(c.url) && c.params.command === '.uno:Copy'})", 5000);
+	// On the selection, a long press keeps it: no click
+	await page.eval("documentsApp.$.viewer.$.lok.event({event: 'selection', payload: '0, 0, 28000, 15750'}); 1");
+	mice = (await calls("luna", "service.office/postMouse")).length;
+	await page.send("Input.dispatchMouseEvent", {type: "mousePressed", x: p[0], y: p[1], button: "right", clickCount: 1});
+	await page.send("Input.dispatchMouseEvent", {type: "mouseReleased", x: p[0], y: p[1], button: "right", clickCount: 1});
+	await page.waitFor("documentsApp.$.viewer.$.lok.$.editMenu.isOpen", 5000);
+	assert.strictEqual((await calls("luna", "service.office/postMouse")).length, mice, "the selection kept");
+});
+
 t.test("LibreOffice editing: not offered by a service without sessions", async function() {
 	await open(scenario({service: true, office: true}));
 	await page.waitFor("FileTypes.converter === true", 10000);

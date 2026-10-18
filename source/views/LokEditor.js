@@ -46,7 +46,14 @@ enyo.kind({
 			{name: "partLabel", className: "lok-part", showing: false},
 			{name: "nextPart", kind: "ToolButton", className: "viewer-tool", icon: "images/next.svg", onclick: "nextPart", showing: false}
 		]},
-		{name: "host", flex: 1, className: "lok-host", requiresDomMousedown: true}
+		{name: "host", flex: 1, className: "lok-host", requiresDomMousedown: true},
+		// A long press: what to do with the selection, by LibreOffice's own commands
+		{name: "editMenu", kind: "Menu", className: "lok-edit-menu", components: [
+			{caption: $L("Cut"), command: ".uno:Cut", onclick: "menuUno"},
+			{caption: $L("Copy"), command: ".uno:Copy", onclick: "menuUno"},
+			{caption: $L("Paste"), command: ".uno:Paste", onclick: "menuUno"},
+			{caption: $L("Select All"), command: ".uno:SelectAll", onclick: "menuUno"}
+		]}
 	],
 
 	create: function() {
@@ -456,12 +463,15 @@ enyo.kind({
 	showSelection: function(inPayload) {
 		var layer = this.selectionLayer, sc = this.scale();
 		layer.innerHTML = "";
+		// In twips, for a long press: on the selection, or elsewhere
+		this.selectionRects = [];
 		var rects = String(inPayload || "").split(";");
 		for (var i = 0; i < rects.length; i++) {
 			var n = this.numbers(rects[i]);
 			if (!n || n.length < 4) {
 				continue;
 			}
+			this.selectionRects.push(n);
 			var d = DocRender.el("div", "lok-selection-rect", layer);
 			d.style.left = Math.round(n[0] * sc) + "px";
 			d.style.top = Math.round(n[1] * sc) + "px";
@@ -495,29 +505,53 @@ enyo.kind({
 
 	// --- Touch -------------------------------------------------------------------
 
-	//* Taps go to LibreOffice; a drag scrolls (natively: Enyo is kept out)
+	//* Holding this long without moving is a long press: the edit menu
+	LONG_PRESS_MS: 500,
+
+	//* Taps go to LibreOffice; a long press opens the edit menu; a drag scrolls (natively: Enyo is kept out)
 	hookTouch: function(inHost) {
-		var self = this, start = null, lastTap = null;
+		var self = this, start = null, lastTap = null, timer = null;
+		var stopTimer = function() {
+			if (timer) {
+				clearTimeout(timer);
+				timer = null;
+			}
+		};
 		inHost.addEventListener("touchstart", function(e) {
 			e.stopPropagation();
+			stopTimer();
 			var t = e.touches && e.touches[0];
 			start = t && e.touches.length === 1 ? {x: t.clientX, y: t.clientY, at: Date.now()} : null;
+			if (start) {
+				var held = start;
+				timer = setTimeout(function() {
+					timer = null;
+					held.long = true;
+					self.longPress(held.x, held.y);
+				}, self.LONG_PRESS_MS);
+			}
 		});
 		inHost.addEventListener("touchmove", function(e) {
 			e.stopPropagation();
 			var t = e.touches && e.touches[0];
 			if (start && t && (Math.abs(t.clientX - start.x) > 8 || Math.abs(t.clientY - start.y) > 8)) {
+				stopTimer();
 				start = null;
 			}
 		});
 		inHost.addEventListener("touchend", function(e) {
 			e.stopPropagation();
+			stopTimer();
 			var t = e.changedTouches && e.changedTouches[0];
 			if (!start || !t) {
 				return;
 			}
-			// The browser would make a mouse click of it too: this is the tap
+			// The browser would make a mouse click of it too: this is the tap, or the end of a long press
 			e.preventDefault();
+			if (start.long) {
+				start = null;
+				return;
+			}
 			var now = Date.now();
 			var count = lastTap && now - lastTap.at < 350 && Math.abs(t.clientX - lastTap.x) < 20 &&
 				Math.abs(t.clientY - lastTap.y) < 20 ? 2 : 1;
@@ -525,13 +559,54 @@ enyo.kind({
 			start = null;
 			self.tap(t.clientX, t.clientY, count);
 		});
-		// A desktop browser (the tests) and a mouse: a click is a tap
+		// A desktop browser (the tests) and a mouse: a click is a tap, the other button a long press
 		inHost.addEventListener("click", function(e) {
 			if (e.target === self.input) {
 				return;
 			}
 			self.tap(e.clientX, e.clientY, e.detail >= 2 ? 2 : 1);
 		});
+		inHost.addEventListener("contextmenu", function(e) {
+			e.preventDefault();
+			self.longPress(e.clientX, e.clientY);
+		});
+	},
+
+	/*
+	 * A long press at a point of the screen. On the selection it is kept;
+	 * anywhere else the word there is selected (a double click, as a
+	 * double tap does). Then the edit menu opens there.
+	 */
+	longPress: function(inX, inY) {
+		var s = this.session;
+		if (!s || !this.page) {
+			return;
+		}
+		var r = this.page.getBoundingClientRect();
+		var sc = this.scale();
+		var x = Math.round((inX - r.left) / sc), y = Math.round((inY - r.top) / sc);
+		if (x < 0 || y < 0 || x > s.width || y > s.height) {
+			return;
+		}
+		var onSelection = (this.selectionRects || []).some(function(n) {
+			return x >= n[0] && x <= n[0] + n[2] && y >= n[1] && y <= n[1] + n[3];
+		});
+		if (!onSelection) {
+			this.tap(inX, inY, 2);
+		}
+		this.$.editMenu.openAt({left: inX, top: inY}, true);
+	},
+
+	menuUno: function(inSender) {
+		var s = this.session;
+		if (!s) {
+			return;
+		}
+		this.call("uno", {session: s.id, command: inSender.command});
+		if (inSender.command !== ".uno:Copy" && inSender.command !== ".uno:SelectAll") {
+			this.doChanged();
+		}
+		this.focusInput();
 	},
 
 	//* A tap at a point of the screen: a click in the document there, and the keyboard
