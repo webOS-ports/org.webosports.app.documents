@@ -7,6 +7,9 @@
 		DocRender.blocks(parentNode, blocks, {images: {zipPath: blobUrl}});
 		DocRender.slides(parentNode, deck.slides, ctx);   // one .doc-slide per slide
 		DocRender.neutraliseLinks(node);                  // for docx-preview's output
+		DocRender.paragraph(block, ctx);                  // one paragraph's node (to put in place of an edited one)
+
+	A paragraph that can be edited (it has an id) carries it as data-pid.
 */
 var DocRender = {
 	apply: function(inNode, inCss) {
@@ -87,6 +90,9 @@ var DocRender = {
 		switch (b.t) {
 		case "p":
 			n = this.el(b.h ? "h" + b.h : "p", "doc-p", inParent);
+			if (b.id !== undefined) {
+				n.setAttribute("data-pid", String(b.id));
+			}
 			this.apply(n, b.s);
 			if (b.bu) {
 				var bullet = this.el("span", "doc-bullet", n);
@@ -141,6 +147,12 @@ var DocRender = {
 			}
 			break;
 		}
+	},
+
+	paragraph: function(inBlock, inCtx) {
+		var holder = document.createElement("div");
+		this.block(holder, inBlock, inCtx);
+		return holder.firstChild;
 	},
 
 	table: function(inParent, inTable, inCtx) {
@@ -246,8 +258,10 @@ var DocRender = {
 		Slides: each a box of the slide's size in CSS pixels, its items
 		placed absolutely. The viewer scales the boxes to the screen.
 	*/
-	slides: function(inParent, inSlides, inCtx) {
+	//* inFirst: the number of the first slide, less one (when one slide is drawn again).
+	slides: function(inParent, inSlides, inCtx, inFirst) {
 		var out = [];
+		var first = inFirst || 0;
 		for (var i = 0; i < inSlides.length; i++) {
 			var s = inSlides[i];
 			var frame = this.el("div", "doc-slide-frame" + (s.hidden ? " doc-slide-hidden" : ""), inParent);
@@ -263,7 +277,7 @@ var DocRender = {
 				this.slideItem(slide, s.items[k], inCtx);
 			}
 			var num = this.el("div", "doc-slide-number", frame);
-			num.appendChild(document.createTextNode(String(i + 1) + (s.hidden ? " (hidden)" : "")));
+			num.appendChild(document.createTextNode(String(first + i + 1) + (s.hidden ? " (hidden)" : "")));
 			out.push({frame: frame, slide: slide, width: s.width, height: s.height});
 		}
 		return out;

@@ -34,6 +34,17 @@ var server, browser, page;
 function makeE2eRoot() {
 	fs.rmSync(E2E_ROOT, {recursive: true, force: true});
 	fs.mkdirSync(path.join(E2E_ROOT, "Work"), {recursive: true});
+	// What the office service's editing session hands out: a 256 px tile, all one colour, and a saved copy
+	fs.mkdirSync(path.join(E2E_ROOT, ".cache"), {recursive: true});
+	var tile = Buffer.alloc(256 * 256 * 4);
+	for (var px = 0; px < tile.length; px += 4) {
+		tile[px] = 10;
+		tile[px + 1] = 200;
+		tile[px + 2] = 30;
+		tile[px + 3] = 255;
+	}
+	fs.writeFileSync(path.join(E2E_ROOT, ".cache", "tile.raw"), tile);
+	fs.copyFileSync(path.join(FIX, "sample.pptx"), path.join(E2E_ROOT, ".cache", "saved.pptx"));
 	// A big sheet: 20000 rows, for the grid's virtualisation.
 	var lines = ["Id,Name,Value"];
 	for (var i = 1; i <= 20000; i++) {
@@ -99,8 +110,40 @@ function scenario(inOptions) {
 		"luna://org.webosports.app.documents.service/info": o.service ? {json: {id: "org.webosports.app.documents.service"}} :
 			{error: {errorCode: -1, errorText: "Service does not exist: org.webosports.app.documents.service."}},
 		"luna://org.webosports.app.documents.service/writeNew": o.service ? {json: {path: "x", bytes: 1}} :
-			{error: {errorCode: -1, errorText: "Service does not exist"}}
+			{error: {errorCode: -1, errorText: "Service does not exist"}},
+		// LibreOffice's service: asked without a document it says badRequest; legacy.doc becomes sample.odt.
+		"luna://org.webosports.service.office/convert": o.office ? {cases: [
+			{when: {source: "/media/internal/legacy.doc", format: "odt"}, json: {target: "/media/internal/sample.odt", format: "odt", cached: false}}
+		], error: {errorCode: "badRequest", errorText: "source and format are required"}} :
+			{error: {errorCode: -1, errorText: "Service does not exist: org.webosports.service.office."}},
+		// Its editing sessions (o.lok): a service with them refuses an open without a document
+		"luna://org.webosports.service.office/open": o.lok ? {cases: [
+			{when: {source: "/media/internal/sample.pptx"}, json: {session: "s1", kind: "presentation", parts: 2, part: 0,
+				width: 28000, height: 15750, tileMode: "rgba"}}
+		], error: {errorCode: "badRequest", errorText: "need \"source\" (a path)"}} :
+			o.office ? {error: {errorCode: -1, errorText: "Unknown method \"open\" for category \"/\""}} :
+			{error: {errorCode: -1, errorText: "Service does not exist: org.webosports.service.office."}}
 	};
+	if (o.lok) {
+		var ok = {json: {}};
+		Object.assign(luna, {
+			// The subscription's answer, then LibreOffice's callbacks
+			"luna://org.webosports.service.office/events": {responses: [
+				{json: {subscribed: true}},
+				{delay: 400, json: {session: "s1", event: "cursor", type: 1, payload: "1440, 1440, 0, 400"}},
+				{delay: 100, json: {session: "s1", event: "state", type: 8, payload: ".uno:Bold=true"}},
+				{delay: 100, json: {session: "s1", event: "invalidate", type: 0, payload: "0, 0, 5000, 5000, 0"}}
+			]},
+			"luna://org.webosports.service.office/paintTile": {json: {file: "/media/internal/.cache/tile.raw", tileMode: "rgba"}},
+			"luna://org.webosports.service.office/postMouse": ok,
+			"luna://org.webosports.service.office/postKey": ok,
+			"luna://org.webosports.service.office/extTextInput": ok,
+			"luna://org.webosports.service.office/uno": ok,
+			"luna://org.webosports.service.office/setPart": {json: {parts: 2, part: 1, width: 28000, height: 15750}},
+			"luna://org.webosports.service.office/save": {json: {target: "/media/internal/.cache/saved.pptx"}},
+			"luna://org.webosports.service.office/close": ok
+		});
+	}
 	Object.assign(luna, o.luna || {});
 	return {
 		webos: true,
@@ -109,7 +152,7 @@ function scenario(inOptions) {
 		luna: luna,
 		acg: acg(),
 		rewrite: [
-			{from: "^file:///media/internal/(big\\.csv|legacy\\.doc|Manual(%20| )1\\.pdf|scan\\.docx|Work/)", to: server.url + "/test-output/e2e-root/$1"},
+			{from: "^file:///media/internal/(big\\.csv|legacy\\.doc|Manual(%20| )1\\.pdf|scan\\.docx|Work/|\\.cache/)", to: server.url + "/test-output/e2e-root/$1"},
 			{from: "^file:///media/internal/", to: server.url + "/tools/tests/fixtures/"}
 		],
 		http: [],
@@ -422,10 +465,61 @@ t.test("document info: title, author, type and size", async function() {
 	await openDoc("/media/internal/sample.odt");
 	await page.tap(".viewer-toolbar .viewer-tool:nth-child(7)");
 	await page.waitFor("documentsApp.$.viewer.$.infoDialog.isOpen");
-	var info = await page.eval("documentsApp.$.viewer.$.infoText.hasNode().textContent");
-	assert.ok(/Fixture Text/.test(info) && /Documents tests/.test(info) && /OpenDocument text/.test(info) && /KB/.test(info), info);
+	var info = await page.eval("documentsApp.$.viewer.$.infoDialog.hasNode().textContent");
+	assert.ok(/sample\.odt/.test(info) && /Fixture Text/.test(info) && /Documents tests/.test(info) &&
+		/OpenDocument text/.test(info) && /KB/.test(info), info);
 	await key("Escape");
 	assert.ok(!(await page.eval("documentsApp.$.viewer.$.infoDialog.isOpen")), "back closes the dialog first");
+});
+
+t.test("document info: opened first on a small screen, it fits and is centred, all of it reachable", async function() {
+	await open(scenario(), {width: 450, height: 380});
+	await openDoc("/media/internal/sample.odt");
+	await page.eval("documentsApp.$.viewer.showInfo(); 1");
+	await page.waitFor("documentsApp.$.viewer.$.infoDialog.isOpen");
+	var m = JSON.parse(await page.eval("(function(){var d=documentsApp.$.viewer.$.infoDialog.hasNode().getBoundingClientRect(); " +
+		"var b=documentsApp.$.viewer.$.infoDialog.hasNode().querySelector('.enyo-button').getBoundingClientRect(); " +
+		"var sc=documentsApp.$.viewer.$.infoScroller; var g=documentsApp.$.viewer.$.infoGroups.hasNode(); " +
+		"return JSON.stringify({top:d.top, bottom:d.bottom, left:d.left, right:d.right, h:innerHeight, w:innerWidth, " +
+		"done:b.bottom, rows:g.querySelectorAll('.viewer-info-row').length, groups:g.offsetHeight, room:sc.hasNode().offsetHeight});})()"));
+	if (SHOTS) {
+		await page.eval("new Promise(function(r){setTimeout(r, 600);})");
+		await page.screenshot(path.join(OUT, "shots", "info-small-open.png"));
+	}
+	assert.ok(m.top >= 0 && m.bottom <= m.h && m.done <= m.h, "inside the window, Done too: " + JSON.stringify(m));
+	assert.ok(Math.abs(m.top - (m.h - m.bottom)) <= 2, "centred: " + JSON.stringify(m));
+	assert.ok(m.rows >= 6, "the rows: " + JSON.stringify(m));
+	var info = await page.eval("documentsApp.$.viewer.$.infoGroups.hasNode().textContent");
+	assert.ok(/LibreOffice 26\.2\.6\.3/.test(info) && !/\$/.test(info), "the generator, readable: " + info);
+	// More than fits: the groups scroll inside the dialog, and the last row can be reached
+	assert.ok(m.groups > m.room, "taller than the room: " + JSON.stringify(m));
+	await page.eval("documentsApp.$.viewer.$.infoScroller.scrollToBottom(); 1");
+	await page.eval("new Promise(function(r){setTimeout(r, 800);})");
+	var last = JSON.parse(await page.eval("(function(){var r=documentsApp.$.viewer.$.infoGroups.hasNode().querySelectorAll('.viewer-info-row'); " +
+		"var l=r[r.length-1].getBoundingClientRect(); var s=documentsApp.$.viewer.$.infoScroller.hasNode().getBoundingClientRect(); " +
+		"return JSON.stringify({top:l.top, bottom:l.bottom, st:s.top, sb:s.bottom});})()"));
+	assert.ok(last.top >= last.st - 1 && last.bottom <= last.sb + 1, "the last row scrolled into view: " + JSON.stringify(last));
+	if (SHOTS) {
+		await page.screenshot(path.join(OUT, "shots", "info-small.png"));
+	}
+	await key("Escape");
+});
+
+t.test("about: on a small screen it fits, is centred and shows its button", async function() {
+	await open(scenario(), {width: 450, height: 380});
+	await page.eval("documentsApp.showAbout(); 1");
+	await page.waitFor("documentsApp.$.about.isOpen");
+	var m = JSON.parse(await page.eval("(function(){var d=documentsApp.$.about.hasNode().getBoundingClientRect(); " +
+		"var b=documentsApp.$.about.hasNode().querySelector('.enyo-button').getBoundingClientRect(); " +
+		"return JSON.stringify({top:d.top, bottom:d.bottom, h:innerHeight, ok:b.bottom, text:documentsApp.$.about.hasNode().textContent});})()"));
+	assert.ok(m.top >= 0 && m.bottom <= m.h && m.ok <= m.h, "inside the window, OK too: " + JSON.stringify(m));
+	assert.ok(Math.abs(m.top - (m.h - m.bottom)) <= 2, "centred: " + JSON.stringify(m));
+	assert.ok(/Version 0\.1\.0/.test(m.text) && /GNU General Public License/.test(m.text), m.text);
+	if (SHOTS) {
+		await page.eval("new Promise(function(r){setTimeout(r, 600);})");
+		await page.screenshot(path.join(OUT, "shots", "about-small.png"));
+	}
+	await page.eval("documentsApp.closeAbout(); 1");
 });
 
 // --- Spreadsheets ---------------------------------------------------------------------
@@ -553,11 +647,366 @@ t.test("sheet editing: an existing name is reported, nothing is overwritten", as
 	assert.ok(await page.eval("documentsApp.$.saveDialog.isOpen"), "the dialog stays for another name");
 });
 
+t.test("sheet editing: a formula's result and the results that use the edited cell are shown at once", async function() {
+	await open(scenario({service: true}));
+	await openDoc("/media/internal/sample.xlsx");
+	await page.waitFor("documentsApp.$.viewer.$.sheet.$.editButton.showing");
+	// Prices: B2 1.5, C2 4, D2 =B2*C2, D5 =SUM(D2:D4).
+	await page.eval("var s=documentsApp.$.viewer.$.sheet; s.$.grid.select(1,1); s.startEdit(); s.$.editor.setValue('2'); s.commitEdit(); 1");
+	await page.waitFor("documentsApp.$.viewer.$.sheet.currentSheet().text[1][3] === '8'", 15000);
+	assert.strictEqual(await page.eval("documentsApp.$.viewer.$.sheet.currentSheet().text[4][3]"), "62.5");
+	await page.eval("var s=documentsApp.$.viewer.$.sheet; s.$.grid.select(6,0); s.startEdit(); s.$.editor.setValue('=B2*10'); s.commitEdit(); 1");
+	await page.waitFor("documentsApp.$.viewer.$.sheet.currentSheet().text[6][0] === '20'", 15000);
+	if (SHOTS) {
+		await page.screenshot(path.join(OUT, "shots", "edit-xlsx.png"));
+	}
+	await page.waitFor("/62\\.5/.test(document.querySelector('.sheet-cells').textContent)");
+	assert.strictEqual(await page.eval("documentsApp.$.viewer.$.sheet.cellSource(documentsApp.$.viewer.$.sheet.currentSheet(), 6, 0)"), "=B2*10",
+		"the cell bar shows the formula");
+	await page.eval("documentsApp.$.viewer.saveCopy(); 1");
+	await page.waitFor("documentsApp.$.saveDialog.isOpen");
+	assert.ok(!/not the formatting/.test(await page.eval("documentsApp.$.saveNote.content")), "an .xlsx copy keeps the formatting");
+	await page.eval("documentsApp.doSave(); 1");
+	await page.waitFor("!documentsApp.$.saveDialog.isOpen", 10000);
+	var w = await calls("luna", "service/writeNew");
+	var ws = XLSX.read(Buffer.from(w[0].params.data, "base64"), {type: "buffer", cellFormula: true}).Sheets.Prices;
+	assert.strictEqual(ws.D2.v, 8);
+	assert.strictEqual(ws.A7.f, "B2*10");
+	assert.strictEqual(ws.A7.v, 20);
+});
+
+t.test("sheet editing: the 123 key makes the cell editor a field for digits (a keypad's), and it is remembered", async function() {
+	await open(scenario({service: true}));
+	await openDoc("/media/internal/sample.xlsx");
+	await page.waitFor("documentsApp.$.viewer.$.sheet.$.editButton.showing");
+	await page.eval("var s=documentsApp.$.viewer.$.sheet; s.$.grid.select(6,0); s.startEdit(); s.$.editor.setValue('12'); 1");
+	await page.waitFor("documentsApp.$.viewer.$.sheet.$.digitsButton.showing");
+	assert.strictEqual(await page.eval("document.querySelector('.sheet-editor input').type"), "text");
+	await page.tap(".sheet-digits-button");
+	assert.strictEqual(await page.eval("document.querySelector('.sheet-editor input').type"), "tel");
+	assert.strictEqual(await page.eval("documentsApp.$.viewer.$.sheet.$.editor.getValue()"), "12", "what was typed stays");
+	assert.strictEqual(await page.eval("localStorage.getItem('documents.cellDigits')"), "1");
+	await page.eval("documentsApp.$.viewer.$.sheet.commitEdit(); 1");
+	assert.strictEqual(await page.eval("documentsApp.$.viewer.$.sheet.$.digitsButton.showing"), false, "only while editing");
+});
+
+t.test("text editing: not offered without the app's service", async function() {
+	await open(scenario());
+	await openDoc("/media/internal/sample.odt");
+	await page.eval("new Promise(function(r){setTimeout(r, 500);})");
+	assert.strictEqual(await page.eval("documentsApp.$.viewer.$.editButton.showing"), false);
+});
+
+t.test("text editing: a tapped paragraph is edited in place and saved as a copy of the .odt", async function() {
+	await open(scenario({service: true}));
+	await openDoc("/media/internal/sample.odt");
+	await page.waitFor("documentsApp.$.viewer.$.editButton.showing");
+	await page.eval("documentsApp.$.viewer.toggleEdit(); 1");
+	await page.waitFor("document.querySelector('.doc-editing [data-pid]')");
+	var pid = await page.eval("Array.prototype.filter.call(document.querySelectorAll('[data-pid]'), function(x){return /bold words/.test(x.textContent);})[0].getAttribute('data-pid')");
+	await page.tap("[data-pid='" + pid + "']");
+	await page.waitFor("document.querySelector('.doc-para-input')");
+	assert.strictEqual(await page.eval("document.querySelector('.doc-para-input').value"), "Plain, bold words and red underlined text, E=mc2.");
+	if (SHOTS) {
+		await page.screenshot(path.join(OUT, "shots", "edit-odt.png"));
+	}
+	await page.eval("var a=document.querySelector('.doc-para-input'); a.value='Plain, very bold words and red underlined text, E=mc2!'; 1");
+	await page.tap(".doc-para-done");
+	await page.waitFor("!document.querySelector('.doc-para-input') && /very bold/.test(document.querySelector('.viewer-content').textContent)", 10000);
+	// The bold run is still bold: the paragraph was built again from the edited document.
+	assert.ok(await page.eval("Array.prototype.some.call(document.querySelectorAll('[data-pid] span'), function(s){return s.textContent==='bold words' && /bold|700/.test(s.style.fontWeight);})"));
+	await page.waitFor("documentsApp.$.viewer.$.saveButton.showing");
+	// Back leaves edit mode first.
+	await page.eval("documentsApp.$.viewer.back(); 1");
+	assert.strictEqual(await page.eval("documentsApp.$.viewer.editMode"), false);
+	await page.tap(".viewer-save");
+	await page.waitFor("documentsApp.$.saveDialog.isOpen");
+	assert.strictEqual(await page.eval("documentsApp.$.saveName.getValue()"), "sample (edited).odt");
+	await page.eval("documentsApp.doSave(); 1");
+	await page.waitFor("!documentsApp.$.saveDialog.isOpen", 10000);
+	var w = await calls("luna", "service/writeNew");
+	assert.strictEqual(w.length, 1);
+	assert.strictEqual(w[0].params.path, "/media/internal/sample (edited).odt");
+	var JSZip = require(path.join(ROOT, "lib/jszip/jszip.min.js"));
+	var zip = await JSZip.loadAsync(Buffer.from(w[0].params.data, "base64"));
+	var content = await zip.file("content.xml").async("string");
+	assert.ok(/Plain, very <text:span text:style-name="T1">bold words<\/text:span>/.test(content), "the bold run is kept");
+	assert.ok(zip.file("Pictures/") !== undefined || Object.keys(zip.files).some(function(n) {
+		return /^Pictures\//.test(n);
+	}), "the pictures are in the copy");
+});
+
+[["sample.pptx", "ppt/slides/slide1.xml"], ["sample.odp", "content.xml"]].forEach(function(inCase) {
+	t.test("slide editing: a paragraph on a slide of " + inCase[0] + ", edited under the slide and saved as a copy", async function() {
+		await open(scenario({service: true}));
+		await openDoc("/media/internal/" + inCase[0]);
+		await page.waitFor("documentsApp.$.viewer.$.editButton.showing");
+		await page.eval("documentsApp.$.viewer.toggleEdit(); 1");
+		var pid = await page.eval("Array.prototype.filter.call(document.querySelectorAll('.doc-slide [data-pid]'), function(x){return /Yellow box/.test(x.textContent);})[0].getAttribute('data-pid')");
+		// On the second slide, below the screen: brought into view first (the scroller is Enyo's).
+		await page.eval("documentsApp.$.viewer.scrollToNode(document.querySelector(\".doc-slide [data-pid='" + pid + "']\")); 1");
+		await page.tap(".doc-slide [data-pid='" + pid + "']");
+		await page.waitFor("document.querySelector('.doc-slide-editor .doc-para-input')");
+		assert.strictEqual(await page.eval("document.querySelector('.doc-para-input').value"), "Yellow box");
+		assert.ok(await page.eval("document.querySelector('.doc-slide-editor').parentNode.previousSibling.classList.contains('doc-slide-frame')"),
+			"the box is under its slide, not in the scaled slide");
+		assert.ok(await page.eval("document.querySelector('.doc-para-editing') !== null"), "the paragraph is marked");
+		if (SHOTS) {
+			await page.screenshot(path.join(OUT, "shots", "edit-slide-" + inCase[0].replace(".", "-") + ".png"));
+		}
+		await page.eval("document.querySelector('.doc-para-input').value = 'Yellow box, edited'; 1");
+		await page.tap(".doc-para-done");
+		await page.waitFor("!document.querySelector('.doc-para-input') && /Yellow box, edited/.test(document.querySelector('.viewer-content').textContent)", 10000);
+		assert.strictEqual(await page.eval("document.querySelectorAll('.doc-slide-frame').length"), await page.eval("documentsApp.$.viewer.slideBoxes.length"));
+		assert.strictEqual(await page.eval("document.querySelectorAll('.doc-slide-number')[1].textContent"), "2", "slides keep their numbers");
+		await page.waitFor("documentsApp.$.viewer.$.saveButton.showing");
+		await page.eval("documentsApp.$.viewer.back(); documentsApp.$.viewer.saveCopy(); 1");
+		await page.waitFor("documentsApp.$.saveDialog.isOpen");
+		assert.strictEqual(await page.eval("documentsApp.$.saveName.getValue()"), inCase[0].replace(".", " (edited)."));
+		await page.eval("documentsApp.doSave(); 1");
+		await page.waitFor("!documentsApp.$.saveDialog.isOpen", 10000);
+		var w = await calls("luna", "service/writeNew");
+		var JSZip = require(path.join(ROOT, "lib/jszip/jszip.min.js"));
+		var zip = await JSZip.loadAsync(Buffer.from(w[0].params.data, "base64"));
+		var all = "";
+		var names = Object.keys(zip.files).filter(function(n) {
+			return /slides\/slide\d+\.xml$|^content\.xml$/.test(n);
+		});
+		for (var i = 0; i < names.length; i++) {
+			all += await zip.file(names[i]).async("string");
+		}
+		assert.ok(/Yellow box, edited/.test(all), "the copy has the new text");
+	});
+});
+
+t.test("text editing: a plain text file in one box, saved as a copy", async function() {
+	await open(scenario({service: true}));
+	await openDoc("/media/internal/sample.txt");
+	await page.waitFor("documentsApp.$.viewer.$.editButton.showing");
+	await page.eval("documentsApp.$.viewer.toggleEdit(); 1");
+	await page.waitFor("document.querySelector('.doc-text-input')");
+	await page.eval("var a=document.querySelector('.doc-text-input'); a.value='Edited\\n' + a.value; a.dispatchEvent(new Event('input')); 1");
+	await page.waitFor("documentsApp.$.viewer.$.saveButton.showing");
+	await page.eval("documentsApp.$.viewer.toggleEdit(); 1");
+	await page.waitFor("!document.querySelector('.doc-text-input') && /^Edited/.test(document.querySelector('.doc-plaintext').textContent)");
+	await page.eval("documentsApp.$.viewer.saveCopy(); 1");
+	await page.waitFor("documentsApp.$.saveDialog.isOpen");
+	assert.strictEqual(await page.eval("documentsApp.$.saveName.getValue()"), "sample (edited).txt");
+	await page.eval("documentsApp.doSave(); 1");
+	await page.waitFor("!documentsApp.$.saveDialog.isOpen", 10000);
+	var w = await calls("luna", "service/writeNew");
+	var saved = Buffer.from(w[0].params.data, "base64").toString("utf8");
+	assert.ok(/^Edited\n/.test(saved), saved.slice(0, 40));
+	assert.ok(saved.indexOf(fs.readFileSync(path.join(FIX, "sample.txt"), "utf8").slice(0, 20)) > 0, "the rest of the text");
+});
+
+t.test("word editing: the .docx editor, its own toolbar keys, and a copy without the editor's stamps", async function() {
+	await open(scenario({service: true}));
+	await openDoc("/media/internal/sample.docx");
+	await page.waitFor("documentsApp.$.viewer.$.editButton.showing");
+	await page.tap(".viewer-toolbar .viewer-tool:last-child");
+	await page.waitFor("documentsApp.$.viewer.$.docx.isOpen() && documentsApp.$.viewer.$.docx.showing && documentsApp.$.viewer.editMode", 60000);
+	assert.ok(/Fixture heading/.test(await text(".docx-editor-host")));
+	assert.strictEqual(await page.eval("documentsApp.$.viewer.$.findButton.disabled"), true, "find is the editor's while it is open");
+	// Type at the start, then make a word bold with the bar's key.
+	await page.eval("(function(){var e=documentsApp.$.viewer.$.docx.superdoc.activeEditor; e.commands.setTextSelection({from: 3, to: 3}); " +
+		"e.commands.insertContent('Edited '); e.commands.setTextSelection({from: 3, to: 9}); return 1;})()");
+	await page.tap(".docx-b");
+	await page.waitFor("documentsApp.$.viewer.$.saveButton.showing");
+	if (SHOTS) {
+		await page.screenshot(path.join(OUT, "shots", "edit-docx.png"));
+	}
+	await page.tap(".viewer-save");
+	await page.waitFor("documentsApp.$.saveDialog.isOpen");
+	assert.strictEqual(await page.eval("documentsApp.$.saveName.getValue()"), "sample (edited).docx");
+	await page.eval("documentsApp.doSave(); 1");
+	await page.waitFor("!documentsApp.$.saveDialog.isOpen", 20000);
+	var w = await calls("luna", "service/writeNew");
+	assert.strictEqual(w[0].params.path, "/media/internal/sample (edited).docx");
+	var JSZip = require(path.join(ROOT, "lib/jszip/jszip.min.js"));
+	var zip = await JSZip.loadAsync(Buffer.from(w[0].params.data, "base64"));
+	var doc = await zip.file("word/document.xml").async("string");
+	assert.ok(/Edited/.test(doc), "the typed text is in the copy");
+	assert.ok(/<w:b\/>|<w:b /.test(doc), "and the bold");
+	assert.ok(/Plain, /.test(doc), "and the rest of the document");
+	assert.strictEqual(zip.file("docProps/custom.xml"), null, "no editor stamps");
+	// Back: read only first, the editor stays.
+	await page.eval("documentsApp.$.viewer.back(); 1");
+	assert.strictEqual(await page.eval("documentsApp.$.viewer.editMode"), false);
+	assert.strictEqual(await page.eval("documentsApp.$.viewer.$.docx.$.bar.showing"), false);
+});
+
+t.test("word editing on a phone: the page fits the screen, the zoom keys work the editor's zoom", async function() {
+	await open(scenario({service: true}), {width: 480, height: 800});
+	await openDoc("/media/internal/sample.docx");
+	await page.waitFor("documentsApp.$.viewer.$.editButton.showing");
+	await page.eval("documentsApp.$.viewer.toggleEdit(); 1");
+	await page.waitFor("documentsApp.$.viewer.$.docx.isOpen() && documentsApp.$.viewer.editMode", 60000);
+	await page.waitFor("documentsApp.$.viewer.$.docx.zoomPercent() < 100", 10000);
+	var m = await page.eval("({doc: document.documentElement.scrollWidth, bar: document.querySelector('.docx-editor-bar').scrollWidth, " +
+		"label: documentsApp.$.viewer.$.zoomLabel.caption, zoom: documentsApp.$.viewer.$.docx.zoomPercent()})");
+	assert.ok(m.doc <= 480 && m.bar <= 480, JSON.stringify(m));
+	assert.strictEqual(m.label, m.zoom + "%", "the label shows the editor's zoom");
+	await page.eval("documentsApp.$.viewer.zoomIn(); 1");
+	await page.waitFor("documentsApp.$.viewer.$.docx.zoomPercent() > " + m.zoom);
+	if (SHOTS) {
+		await page.screenshot(path.join(OUT, "shots", "edit-docx-phone.png"));
+	}
+});
+
+t.test("conversion: with LibreOffice's service a .doc is listed, converted and shown under its own name", async function() {
+	await open(scenario({service: true, office: true}));
+	await page.waitFor("FileTypes.converter === true", 10000);
+	var names = await libraryNames();
+	assert.ok(names.indexOf("legacy.doc") >= 0, "a .doc is listed: " + names.join(", "));
+	assert.strictEqual(await openDoc("/media/internal/legacy.doc"), "odt");
+	assert.ok(/Fixture heading/.test(await text(".viewer-content")));
+	assert.strictEqual(await page.eval("documentsApp.$.viewer.$.title.content"), "legacy.doc");
+	assert.ok(/Word 97-2003 document, converted by LibreOffice/.test(await page.eval("documentsApp.$.viewer.$.subtitle.content")));
+	var c = await calls("luna", "service.office/convert");
+	assert.ok(c.some(function(x) {
+		return x.params.source === "/media/internal/legacy.doc" && x.params.format === "odt" && x.acg === "granted";
+	}), JSON.stringify(c));
+	// A copy goes next to the .doc, as OpenDocument.
+	await page.eval("documentsApp.$.viewer.saveCopy(); 1");
+	await page.waitFor("documentsApp.$.saveDialog.isOpen");
+	assert.strictEqual(await page.eval("documentsApp.$.saveName.getValue()"), "legacy (edited).odt");
+});
+
+t.test("conversion: without the service a .doc is not listed, and opened it says why", async function() {
+	await open(scenario());
+	await libraryNames();
+	assert.strictEqual(await page.eval("FileTypes.converter"), false);
+	assert.strictEqual(await openDoc("/media/internal/legacy.doc"), "error");
+	assert.ok(/binary format from before 2007/.test(await page.eval("documentsApp.$.viewer.$.statusText.content")));
+});
+
+t.test("LibreOffice editing: a session's tiles, taps, typing, Bold, the next slide and a copy", async function() {
+	await open(scenario({service: true, office: true, lok: true}));
+	await page.waitFor("FileTypes.lokSessions === true", 10000);
+	await openDoc("/media/internal/sample.pptx");
+	await page.eval("documentsApp.$.appMenu.open(); 1");
+	await page.waitFor("documentsApp.$.appMenu.isOpen");
+	assert.strictEqual(await page.eval("documentsApp.$.menuLok.showing"), true, "offered in the app menu");
+	await tapControl("documentsApp.$.menuLok");
+	await page.waitFor("documentsApp.$.viewer.$.lok.isOpen() && documentsApp.$.viewer.$.lok.showing", 10000);
+	// A tile is asked for and drawn
+	await page.waitFor("(function(){var c=document.querySelector('.lok-tile'); if(!c) return false; " +
+		"var d=c.getContext('2d').getImageData(10,10,1,1).data; return d[0]===10 && d[1]===200 && d[2]===30;})()", 10000);
+	var paints = await calls("luna", "service.office/paintTile");
+	assert.ok(paints.length > 0 && paints[0].params.session === "s1" && paints[0].params.part === 0 &&
+		paints[0].params.pixelWidth === 256, JSON.stringify(paints[0] && paints[0].params));
+	// The events: the cursor drawn, Bold shown as on
+	await page.waitFor("document.querySelector('.lok-cursor').style.display !== 'none'", 5000);
+	await page.waitFor("documentsApp.$.viewer.$.lok.$.bold.hasClass('viewer-tool-on')", 5000);
+	// A tap on the page: a click in LibreOffice's twips
+	await page.tap(".lok-page");
+	await page.waitFor("__MOCK__.calls.filter(function(c){return /postMouse/.test(c.url)}).length >= 2", 5000);
+	var mouse = await calls("luna", "service.office/postMouse");
+	assert.strictEqual(mouse[0].params.type, "down");
+	assert.strictEqual(mouse[1].params.type, "up");
+	assert.ok(mouse[0].params.x > 0 && mouse[0].params.y > 0 && mouse[0].params.x < 28000, JSON.stringify(mouse[0].params));
+	// Repaints and taps are not edits
+	await page.waitFor("__MOCK__.calls.filter(function(c){return /paintTile/.test(c.url)}).length > " + paints.length, 5000);
+	assert.strictEqual(await page.eval("documentsApp.$.viewer.$.saveButton.showing"), false, "not edited yet");
+	// Typing: the text box takes it and sends it as committed text
+	await page.eval("document.querySelector('.lok-tile').__kept = true; document.querySelector('.lok-input').focus(); 1");
+	await page.send("Input.insertText", {text: "Hi"});
+	await page.waitFor("__MOCK__.calls.some(function(c){return /extTextInput/.test(c.url) && c.params.text === 'Hi' && c.params.type === 'commit'})", 5000);
+	// The Save button shows with the first edit; the page keeps its tiles (no new layout for the same width)
+	await page.waitFor("documentsApp.$.viewer.$.saveButton.showing", 5000);
+	await page.eval("new Promise(function(r){setTimeout(r, 300);})");
+	assert.strictEqual(await page.eval("document.querySelector('.lok-tile').__kept === true"), true, "the tiles kept");
+	// Bold, through the key bar
+	await page.eval("documentsApp.$.viewer.$.lok.uno(documentsApp.$.viewer.$.lok.$.bold); 1");
+	var unos = await calls("luna", "service.office/uno");
+	assert.ok(unos.some(function(u) {
+		return u.params.command === ".uno:Bold";
+	}), JSON.stringify(unos));
+	// Night reading darkens LibreOffice's page too
+	assert.strictEqual(await page.eval("getComputedStyle(document.querySelector('.lok-page')).filter"), "none");
+	await page.eval("documentsApp.$.viewer.toggleNight(); 1");
+	var lokFilter = await page.eval("getComputedStyle(document.querySelector('.lok-page')).filter");
+	await page.eval("documentsApp.$.viewer.toggleNight(); 1");
+	assert.ok(/invert/.test(lokFilter), "night: " + lokFilter);
+	// The next slide
+	assert.strictEqual(await page.eval("documentsApp.$.viewer.$.lok.$.partLabel.content"), "1 of 2");
+	await page.eval("documentsApp.$.viewer.$.lok.nextPart(); 1");
+	await page.waitFor("documentsApp.$.viewer.$.lok.$.partLabel.content === '2 of 2'", 5000);
+	// Save a Copy: the session's saved file, next to the original
+	await page.waitFor("documentsApp.$.viewer.$.saveButton.showing", 5000);
+	await page.eval("documentsApp.$.viewer.saveCopy(); 1");
+	await page.waitFor("documentsApp.$.saveDialog.isOpen");
+	assert.strictEqual(await page.eval("documentsApp.$.saveName.getValue()"), "sample (edited).pptx");
+	await page.eval("documentsApp.doSave(); 1");
+	await page.waitFor("!documentsApp.$.saveDialog.isOpen", 10000);
+	var w = await calls("luna", "service/writeNew");
+	assert.strictEqual(w[0].params.path, "/media/internal/sample (edited).pptx");
+	assert.ok(Buffer.from(w[0].params.data, "base64").equals(fs.readFileSync(path.join(FIX, "sample.pptx"))), "the saved bytes");
+	// Back: the session is closed, the slides shown again
+	await page.eval("documentsApp.$.viewer.back(); 1");
+	assert.strictEqual(await page.eval("documentsApp.$.viewer.$.lok.isOpen()"), false);
+	assert.ok((await calls("luna", "service.office/close")).length === 1);
+	assert.strictEqual(await page.eval("documentsApp.$.viewer.$.scroller.showing"), true);
+	if (SHOTS) {
+		await page.screenshot(path.join(OUT, "shots", "lok-closed.png"));
+	}
+});
+
+t.test("LibreOffice editing: a long press selects the word and offers cut, copy and paste", async function() {
+	await open(scenario({service: true, office: true, lok: true}));
+	await page.waitFor("FileTypes.lokSessions === true", 10000);
+	await openDoc("/media/internal/sample.pptx");
+	await page.eval("documentsApp.$.viewer.editWithLibreOffice(); 1");
+	await page.waitFor("documentsApp.$.viewer.$.lok.isOpen() && !!document.querySelector('.lok-tile')", 10000);
+	var p = JSON.parse(await page.eval("(function(){var r=document.querySelector('.lok-page').getBoundingClientRect(); " +
+		"return JSON.stringify([Math.round(r.left + 60), Math.round(r.top + 40)]);})()"));
+	var mice = (await calls("luna", "service.office/postMouse")).length;
+	// Held, as a finger does: no tap, but a double click (the word), and the menu
+	await page.send("Input.dispatchTouchEvent", {type: "touchStart", touchPoints: [{x: p[0], y: p[1]}]});
+	await page.eval("new Promise(function(r){setTimeout(r, 700);})");
+	await page.send("Input.dispatchTouchEvent", {type: "touchEnd", touchPoints: []});
+	await page.waitFor("documentsApp.$.viewer.$.lok.$.editMenu.isOpen", 5000);
+	var mouse = (await calls("luna", "service.office/postMouse")).slice(mice);
+	assert.deepStrictEqual(mouse.map(function(c) {
+		return c.params.type + c.params.count;
+	}), ["down1", "up1", "down2", "up2"], "a double click (a click, then one counted 2), and no tap besides");
+	var items = await page.eval("documentsApp.$.viewer.$.lok.$.editMenu.getControls().map(function(c){return c.caption;}).join(',')");
+	assert.ok(/Cut/.test(items) && /Copy/.test(items) && /Paste/.test(items), items);
+	if (SHOTS) {
+		await page.screenshot(path.join(OUT, "shots", "lok-edit-menu.png"));
+	}
+	// Copy: LibreOffice's own
+	var copy = await page.eval("(function(){var m=documentsApp.$.viewer.$.lok.$.editMenu; var c=m.getControls().filter(function(x){return x.caption==='Copy';})[0]; " +
+		"var r=c.hasNode().getBoundingClientRect(); return {x:r.left+r.width/2, y:r.top+r.height/2};})()");
+	await page.send("Input.dispatchMouseEvent", {type: "mousePressed", x: copy.x, y: copy.y, button: "left", clickCount: 1});
+	await page.send("Input.dispatchMouseEvent", {type: "mouseReleased", x: copy.x, y: copy.y, button: "left", clickCount: 1});
+	await page.waitFor("__MOCK__.calls.some(function(c){return /service.office\\/uno/.test(c.url) && c.params.command === '.uno:Copy'})", 5000);
+	// On the selection, a long press keeps it: no click
+	await page.eval("documentsApp.$.viewer.$.lok.event({event: 'selection', payload: '0, 0, 28000, 15750'}); 1");
+	mice = (await calls("luna", "service.office/postMouse")).length;
+	await page.send("Input.dispatchMouseEvent", {type: "mousePressed", x: p[0], y: p[1], button: "right", clickCount: 1});
+	await page.send("Input.dispatchMouseEvent", {type: "mouseReleased", x: p[0], y: p[1], button: "right", clickCount: 1});
+	await page.waitFor("documentsApp.$.viewer.$.lok.$.editMenu.isOpen", 5000);
+	assert.strictEqual((await calls("luna", "service.office/postMouse")).length, mice, "the selection kept");
+});
+
+t.test("LibreOffice editing: not offered by a service without sessions", async function() {
+	await open(scenario({service: true, office: true}));
+	await page.waitFor("FileTypes.converter === true", 10000);
+	await openDoc("/media/internal/sample.pptx");
+	await page.eval("new Promise(function(r){setTimeout(r, 300);})");
+	await page.eval("documentsApp.$.appMenu.open(); 1");
+	await page.waitFor("documentsApp.$.appMenu.isOpen");
+	assert.strictEqual(await page.eval("documentsApp.$.menuLok.showing"), false);
+});
+
 // --- Layouts ------------------------------------------------------------------------
 
 [["tablet", 1024, 768], ["phone", 480, 800], ["square", 450, 380]].forEach(function(inSize) {
 	t.test("layout " + inSize[0] + " " + inSize[1] + "x" + inSize[2] + ": nothing wider than the screen, tools fit", async function() {
-		await open(scenario(), {width: inSize[1], height: inSize[2]});
+		// With the service, so the edit tool is in the toolbar too.
+		await open(scenario({service: true}), {width: inSize[1], height: inSize[2]});
 		await libraryNames();
 		var lib = await page.eval("({doc: document.documentElement.scrollWidth, toolbar: document.querySelector('.library-toolbar').scrollWidth})");
 		assert.ok(lib.doc <= inSize[1] && lib.toolbar <= inSize[1], JSON.stringify(lib));
@@ -568,6 +1017,7 @@ t.test("sheet editing: an existing name is reported, nothing is overwritten", as
 			"return t>inner+0.5;}).map(function(b){return b.textContent;})");
 		assert.deepStrictEqual(clipped, [], "filter captions fit");
 		await openDoc("/media/internal/sample.odt");
+		await page.waitFor("documentsApp.$.viewer.$.editButton.showing");
 		var reflow = await page.eval("documentsApp.$.viewer.reflow");
 		assert.strictEqual(reflow, inSize[1] < 700, "phones read reflowed text");
 		var m = await page.eval("({page: document.querySelector('.doc-page').getBoundingClientRect().right, tools: document.querySelector('.viewer-toolbar').scrollWidth, " +

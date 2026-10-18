@@ -4,8 +4,10 @@
 
 		DocLoader.read("/media/internal/a.docx", function(err, buffer) {...});
 		DocLoader.open("a.docx", buffer, function(err, result) {...});
+		DocLoader.edit({cell: {sheet, r, c, text}} | {para: {id, text}}, function(err, result) {...});
 		DocLoader.save({edits, format}, function(err, bytes) {...});
 		DocLoader.loadScript("lib/docx-preview/docx-preview.min.js", callback);
+		DocLoader.loadStyle("lib/superdoc/style.css");
 
 	Files are read with XMLHttpRequest on file: URLs, which WAM allows a
 	"trusted" app (appinfo.json trustLevel) anywhere on the device.
@@ -75,6 +77,7 @@ var DocLoader = {
 					} else {
 						var err = new Error(msg.error);
 						err.code = msg.code;
+						err.kind = msg.kind;
 						cb(err);
 					}
 				}
@@ -194,9 +197,36 @@ var DocLoader = {
 		});
 	},
 
+	//* An edit as it is made (see DocEngine.edit).
+	edit: function(inRequest, inCallback) {
+		if (this.worker) {
+			this.post({cmd: "edit", cell: inRequest.cell, para: inRequest.para}, [], inCallback);
+			return;
+		}
+		if (!this.engine) {
+			inCallback(new Error("Nothing to edit."));
+			return;
+		}
+		var self = this;
+		var run = function() {
+			self.engine.edit(inRequest).then(function(r) {
+				inCallback(null, r);
+			}, function(e) {
+				inCallback(e);
+			});
+		};
+		if (inRequest.cell) {
+			// The calculator is loaded into the page on the first edit; without it formulas show as typed.
+			this.loadScript("lib/hyperformula/hyperformula.full.min.js", run);
+		} else {
+			run();
+		}
+	},
+
 	save: function(inRequest, inCallback) {
 		if (this.worker) {
-			this.post({cmd: "save", edits: inRequest.edits, format: inRequest.format, sheet: inRequest.sheet}, [], inCallback);
+			this.post({cmd: "save", edits: inRequest.edits, format: inRequest.format, sheet: inRequest.sheet, text: inRequest.text},
+				[], inCallback);
 			return;
 		}
 		if (!this.engine) {
@@ -245,6 +275,18 @@ var DocLoader = {
 			self.loadScript(inList[i++], next);
 		};
 		next();
+	},
+
+	//* Adds a style sheet once.
+	loadStyle: function(inPath) {
+		if (this.scripts[inPath]) {
+			return;
+		}
+		this.scripts[inPath] = {loaded: true, waiting: []};
+		var l = document.createElement("link");
+		l.rel = "stylesheet";
+		l.href = this.base() + inPath;
+		document.head.appendChild(l);
 	},
 
 	//* Adds a script tag once; calls back when it has run.

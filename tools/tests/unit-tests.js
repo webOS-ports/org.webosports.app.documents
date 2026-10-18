@@ -783,6 +783,14 @@ t.test("service: refuses paths outside the root, hidden names and other types", 
 	assert.ok(!fs.existsSync(tmpRoot + "../escape.csv"));
 });
 
+t.test("service: writes copies of every format the app edits", function() {
+	["c.xlsx", "c.ods", "c.csv", "c.odt", "c.docx", "c.pptx", "c.odp", "c.txt", "c.md"].forEach(function(n) {
+		var r = writer.writeNew(tmpRoot, tmpRoot + n, Buffer.from("x").toString("base64"));
+		assert.strictEqual(r.returnValue, true, n);
+	});
+	assert.strictEqual(writer.writeNew(tmpRoot, tmpRoot + "c.html", Buffer.from("x").toString("base64")).errorCode, "EINVAL");
+});
+
 t.test("service: a missing folder fails cleanly and leaves nothing behind", function() {
 	var r = writer.writeNew(tmpRoot, tmpRoot + "nofolder/x.ods", Buffer.from("x").toString("base64"));
 	assert.strictEqual(r.returnValue, false);

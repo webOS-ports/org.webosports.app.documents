@@ -21,6 +21,7 @@ enyo.kind({
 			{name: "menuNight", caption: $L("Night Reading"), onclick: "menuNight"},
 			{name: "menuInfo", caption: $L("Document Info"), onclick: "menuInfo"},
 			{name: "menuFreeze", caption: $L("Freeze First Row"), onclick: "menuFreeze"},
+			{name: "menuLok", caption: $L("Edit with LibreOffice"), onclick: "menuLok", showing: false},
 			{name: "menuRefresh", caption: $L("Look for Documents Again"), onclick: "rescan"},
 			{caption: $L("About Documents"), onclick: "showAbout"}
 		]},
@@ -39,10 +40,16 @@ enyo.kind({
 				{name: "saveOk", kind: "ActivityButton", flex: 1, className: "enyo-button-affirmative", caption: $L("Save"), onclick: "doSave"}
 			]}
 		]},
-		{name: "about", kind: "ModalDialog", caption: $L("About Documents"), components: [
-			{name: "aboutText", className: "about-text", allowHtml: true, content: ""},
-			{kind: "Button", caption: $L("OK"), onclick: "closeAbout"}
-		]},
+		// As Document Info: the name, a line under it, the text scrolling within the screen, and OK below
+		{name: "about", kind: "ModalDialog", caption: $L("Documents"), className: "enyo-popup enyo-modaldialog viewer-info-dialog",
+			components: [
+				{name: "aboutVersion", className: "viewer-info-subtitle", content: ""},
+				{name: "aboutScroller", kind: "Scroller", className: "viewer-info-scroller", horizontal: false, autoHorizontal: false,
+					components: [
+						{name: "aboutText", className: "about-text", allowHtml: true, content: ""}
+					]},
+				{kind: "Button", caption: $L("OK"), onclick: "closeAbout"}
+			]},
 		{name: "toaster", className: "documents-toast", showing: false}
 	],
 
@@ -65,6 +72,31 @@ enyo.kind({
 		}
 		// The library is filled in the background either way.
 		this.rescan();
+		this.findConverter();
+	},
+
+	/**
+		Whether LibreOffice's service (org.webosports.service.office) is
+		installed: asked without a document, it answers "badRequest". Then
+		.doc, .ppt and .rtf are listed too, and converted when opened.
+	*/
+	findConverter: function() {
+		var self = this;
+		FileService.call("luna://org.webosports.service.office/convert", {}, function(inErr) {
+			var present = !!inErr && inErr.code === "badRequest";
+			if (present && !FileTypes.converter) {
+				FileTypes.converter = true;
+				self.rescan();
+			}
+		});
+		// Editing sessions: a service that has them refuses an open without a document the same way
+		FileService.call("luna://org.webosports.service.office/open", {}, function(inErr) {
+			FileTypes.lokSessions = !!inErr && inErr.code === "badRequest";
+		});
+	},
+
+	menuLok: function() {
+		this.$.viewer.editWithLibreOffice();
 	},
 
 	//* The local path a launch asks for, or null.
@@ -263,6 +295,8 @@ enyo.kind({
 		this.$.menuFind.setDisabled(!inViewer);
 		this.$.menuInfo.setDisabled(!inViewer);
 		this.$.menuFreeze.setShowing(sheet);
+		// LibreOffice edits what it reads, in a session of the office service, when it has them
+		this.$.menuLok.setShowing(inViewer && FileTypes.lokSessions && !this.$.viewer.$.lok.isOpen());
 		this.$.menuFreeze.setCaption(this.prefs.freeze ? $L("Unfreeze First Row") : $L("Freeze First Row"));
 		this.$.menuNight.setCaption(this.prefs.night ? $L("Day Reading") : $L("Night Reading"));
 	},
@@ -302,11 +336,10 @@ enyo.kind({
 		this.$.saveOk.setActive(false);
 		this.$.saveOk.setDisabled(false);
 		var note = $L("A new file next to the original; the original is not changed.");
-		if (req.format !== "csv") {
-			note += " " + $L("The copy keeps the values and formulas, not the formatting, charts or pictures.");
-		}
 		if (v.doc.kind === "xls") {
-			note += " " + $L("It is saved as .xlsx.");
+			note += " " + $L("It is saved as .xlsx, with the values and formulas but not the formatting, charts or pictures.");
+		} else if (v.doc.kind === "txt" || v.doc.kind === "md") {
+			note += " " + $L("It is saved as UTF-8.");
 		}
 		this.$.saveNote.setContent(enyo.string.escapeHtml(note));
 	},
@@ -330,7 +363,7 @@ enyo.kind({
 		var path = DocLibrary.dirName(v.path) + "/" + name;
 		this.$.saveOk.setActive(true);
 		this.$.saveOk.setDisabled(true);
-		DocLoader.save(req, function(inErr, inBytes) {
+		v.makeCopy(req, function(inErr, inBytes) {
 			if (inErr) {
 				self.saveFailed(inErr.message);
 				return;
@@ -367,13 +400,31 @@ enyo.kind({
 	// --- About -----------------------------------------------------------
 
 	showAbout: function() {
-		this.$.about.openAtCenter();
+		var about = this.$.about;
+		var info = enyo.fetchAppInfo && enyo.fetchAppInfo();
+		var e = enyo.string.escapeHtml;
+		// Filled in before it opens: it is centred on the size it has then.
+		about.validateComponents();
+		this.$.aboutVersion.setContent(info && info.version ? $L("Version #{v}").replace("#{v}", info.version) : "");
 		this.$.aboutText.setContent(
-			"<p>" + enyo.string.escapeHtml($L("Reads Word (.docx), OpenDocument (.odt, .ods, .odp), Excel (.xlsx, .xls), " +
+			"<p>" + e($L("Reads Word (.docx), OpenDocument (.odt, .ods, .odp), Excel (.xlsx, .xls), " +
 				"PowerPoint (.pptx), CSV, text and Markdown files.")) + "</p>" +
-			"<p>" + enyo.string.escapeHtml($L("Built with docx-preview (Apache 2.0), SheetJS Community Edition (Apache 2.0) " +
-				"and JSZip (MIT).")) + "</p>" +
-			"<p>" + enyo.string.escapeHtml($L("Licensed under the GNU General Public License version 3. WebOS Ports.")) + "</p>");
+			(FileTypes.converter ? "<p>" + e($L("With LibreOffice's service: older Word, PowerPoint and RTF files too, " +
+				"and editing in LibreOffice.")) + "</p>" : "") +
+			"<p>" + e($L("Built with docx-preview (Apache 2.0), SheetJS Community Edition (Apache 2.0), " +
+				"JSZip (MIT), HyperFormula (GPLv3) and SuperDoc (AGPLv3).")) + "</p>" +
+			"<p>" + e($L("Licensed under the GNU General Public License version 3. WebOS Ports.")) + "</p>");
+		this.$.aboutScroller.applyStyle("height", null);
+		about.openAtCenter();
+		DialogFit.fit(about, this.$.aboutScroller, this.$.aboutText);
+	},
+
+	resizeHandler: function() {
+		this.inherited(arguments);
+		// A notification or the keyboard changes the room the text has
+		if (this.$.about.isOpen) {
+			DialogFit.fit(this.$.about, this.$.aboutScroller, this.$.aboutText);
+		}
 	},
 
 	closeAbout: function() {

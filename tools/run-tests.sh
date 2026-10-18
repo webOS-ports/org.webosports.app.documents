@@ -3,7 +3,7 @@
 #   1. syntax + ES5 check of source/ (the app's own code is ES5, like the
 #      other Enyo 1 apps; lib/ is third-party and left as it comes)
 #   2. unit tests of the readers, helpers and the service's writer
-#      (tools/tests/unit-tests.js)
+#      (tools/tests/unit-tests.js), and of editing (tools/tests/edit-tests.js)
 #   3. end-to-end tests of the app in headless Chromium with mocks, offline
 #      (tools/tests/e2e-tests.js)
 #
@@ -33,6 +33,9 @@ echo "ok"
 
 echo "== unit tests"
 node tools/tests/unit-tests.js
+
+echo "== editing unit tests"
+node tools/tests/edit-tests.js
 
 echo "== end-to-end tests (mocked, offline)"
 node tools/tests/e2e-tests.js $E2E_ARGS

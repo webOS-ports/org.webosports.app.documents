@@ -17,7 +17,7 @@ function checkPath(inRoot, inPath) {
 	var p = String(inPath || "");
 	var rest = p.slice(inRoot.length);
 	if (p.indexOf(inRoot) !== 0 || !rest || p.indexOf("\u0000") >= 0 || /(^|\/)\.\.?(\/|$)/.test(rest) ||
-			/(^|\/)\./.test(rest) || !/\.(xlsx|ods|csv)$/i.test(p)) {
+			/(^|\/)\./.test(rest) || !/\.(xlsx|ods|csv|odt|docx|txt|md|pptx|odp)$/i.test(p)) {
 		return null;
 	}
 	return p;
@@ -36,7 +36,7 @@ function result(inOk, inCode, inText, inExtra) {
 function writeNew(inRoot, inPath, inBase64) {
 	var path = checkPath(inRoot, inPath);
 	if (!path) {
-		return result(false, "EINVAL", "Only new .xlsx, .ods or .csv files under " + inRoot + " can be written");
+		return result(false, "EINVAL", "Only new .xlsx, .ods, .csv, .odt, .docx, .pptx, .odp, .txt or .md files under " + inRoot + " can be written");
 	}
 	if (typeof inBase64 !== "string" || !inBase64.length || inBase64.length > Math.ceil(MAX_BYTES / 3) * 4) {
 		return result(false, "EINVAL", "No data, or too much");

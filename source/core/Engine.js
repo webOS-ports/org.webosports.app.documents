@@ -12,7 +12,14 @@
 			result.images    // {zipPath: {bytes: Uint8Array, mime}}
 			result.meta      // title, author, ...
 		});
+		engine.edit({cell: {sheet, r, c, text}}).then(function(r) {...});   // r.cells: values to show again
+		engine.edit({para: {id, text}}).then(function(r) {...});            // r.block: the paragraph again
 		engine.save({edits: [{sheet, r, c, text}], format: "xlsx"}).then(function(bytes) {...});
+		engine.save({format: "odt"}), engine.save({format: "txt", text})
+
+	A copy of a workbook (.xlsx, .ods) or a text document (.odt) is the
+	file itself with only the edited parts changed (SheetPatch.js,
+	TextEdit.js), so what Documents does not show is kept.
 
 	Libraries are passed in (or found as globals), so node tests can use the
 	bundled files directly.
@@ -32,6 +39,9 @@
 	var Sheets = need("DocSheets", "./Sheets.js");
 	var Docx = need("DocDocx", "./Docx.js");
 	var Stream = need("DocSheetStream", "./SheetStream.js");
+	var SheetPatch = need("DocSheetPatch", "./SheetPatch.js");
+	var Formulas = need("DocFormulas", "./Formulas.js");
+	var TextEdit = need("DocTextEdit", "./TextEdit.js");
 
 	/**
 		Workbooks whose sheet XML is larger than this (uncompressed) are
@@ -66,6 +76,11 @@
 		this.libs = inLibs || {};
 		this.workbook = null;
 		this.csvRows = null;
+		// The file's bytes, for a copy that keeps what is not edited; and what it is.
+		this.source = null;
+		this.textSession = null;
+		this.deck = null;
+		this.calc = null;
 	}
 
 	//* A library by its global name; the spreadsheet reader may be loaded on first use (libs.loadXLSX).
@@ -73,6 +88,9 @@
 		var lib = this.libs[inName] || root[inName] || null;
 		if (!lib && inName === "XLSX" && this.libs.loadXLSX) {
 			lib = this.libs.XLSX = this.libs.loadXLSX();
+		}
+		if (!lib && inName === "HyperFormula" && this.libs.loadHyperFormula) {
+			lib = this.libs.HyperFormula = this.libs.loadHyperFormula();
 		}
 		return lib;
 	};
@@ -88,6 +106,14 @@
 		this.workbook = null;
 		this.csvRows = null;
 		this.kind = null;
+		this.source = null;
+		this.textSession = null;
+		this.deck = null;
+		if (this.calc) {
+			this.calc.destroy();
+			this.calc = null;
+		}
+		this.calcFailed = false;
 		if (verdict.kind === "zip" || ["docx", "odt", "xlsx", "ods", "pptx", "odp"].indexOf(verdict.kind) >= 0 &&
 				FT.sniff(bytes.subarray(0, 8)) === "zip") {
 			return this.openZip(inRequest.name, inRequest.buffer, bytes, inRequest);
@@ -136,7 +162,7 @@
 		if (kind === "txt" || kind === "md") {
 			var decoded = Text.decode(inBytes);
 			return {kind: kind, family: "text", meta: {encoding: decoded.encoding},
-				model: kind === "md" ? {html: Text.markdown(decoded.text)} : {text: decoded.text}, images: {}};
+				model: kind === "md" ? {html: Text.markdown(decoded.text), text: decoded.text} : {text: decoded.text}, images: {}};
 		}
 		if (kind === "csv") {
 			var d = Text.decode(inBytes);
@@ -199,8 +225,9 @@
 		if (!XLSX) {
 			throw new Error("The spreadsheet reader did not load.");
 		}
+		// cellNF: the number formats, for the values formulas give while editing.
 		var opts = {type: "array", dense: true, cellFormula: true, cellStyles: false, cellDates: false,
-			cellNF: false, sheetStubs: false, WTF: false};
+			cellNF: true, sheetStubs: false, WTF: false};
 		if (inMaxRows) {
 			opts.sheetRows = inMaxRows;
 		}
@@ -253,19 +280,32 @@
 				switch (verdict.kind) {
 				case "odt":
 					return self.readParts(zip, ["content.xml", "styles.xml", "meta.xml"]).then(function(files) {
-						return self.withImages(zip, {kind: "odt", family: "text", model: Odf.text(files)}, files);
+						// Paragraphs are tracked, for editing: content.xml with where each part is in it.
+						var track = {};
+						var model = Odf.text(files, {track: track});
+						self.source = {kind: "odt", buffer: inBuffer};
+						self.textSession = TextEdit.session(files["content.xml"], track);
+						return self.withImages(zip, {kind: "odt", family: "text", model: model, editable: true}, files);
 					});
 				case "odp":
 					return self.readParts(zip, ["content.xml", "styles.xml", "meta.xml"]).then(function(files) {
-						return self.withImages(zip, {kind: "odp", family: "slides", model: Odf.presentation(files)}, files);
+						// The slides' paragraphs are tracked, for editing, as a text document's are.
+						var track = {};
+						var model = Odf.presentation(files, {track: track});
+						self.source = {kind: "odp", buffer: inBuffer};
+						self.textSession = TextEdit.session(files["content.xml"], track);
+						return self.withImages(zip, {kind: "odp", family: "slides", model: model, editable: true}, files);
 					});
 				case "pptx":
 					var parts = names.filter(function(n) {
 						return /\.(xml|rels)$/i.test(n) && !/^ppt\/(slides\/)?(notesSlides|comments|embeddings)\//.test(n);
 					});
 					return self.readParts(zip, parts).then(function(files) {
-						var result = {kind: "pptx", family: "slides", model: Pptx.parse(files)};
+						var track = {};
+						var result = {kind: "pptx", family: "slides", model: Pptx.parse(files, track), editable: true};
 						result.model.meta = Pptx.coreProps(files["docProps/core.xml"]);
+						self.source = {kind: "pptx", buffer: inBuffer};
+						self.deck = {files: files, track: track, changed: {}};
 						return self.withImages(zip, result, files);
 					});
 				case "docx":
@@ -295,7 +335,11 @@
 					if (xmlSize > FULL_SHEET_XML_LIMIT || self.libs.forceStream) {
 						return verdict.kind === "xlsx" ? self.streamXlsx(zip, inRequest) : self.streamOds(zip, inRequest);
 					}
-					return self.openWorkbook(verdict.kind, inBytes);
+					var wbResult = self.openWorkbook(verdict.kind, inBytes);
+					if (!wbResult.streamed) {
+						self.source = {kind: verdict.kind, buffer: inBuffer};
+					}
+					return wbResult;
 				default:
 					throw self.unsupported(verdict.kind, verdict.label);
 				}
@@ -609,15 +653,195 @@
 	};
 
 	/**
-		Writes a copy with inRequest.edits applied: [{sheet (index in the
-		workbook), r, c, text}]. Format: "xlsx", "ods" or "csv". Resolves
-		with a Uint8Array.
+		An edit, as it is made: {cell: {sheet, r, c, text}} works the
+		workbook's formulas out again and resolves with {cells: [{sheet, r,
+		c, text, kind}]}, the cells to show again (none when there is no
+		calculator); {para: {id, text}} changes a paragraph of a text
+		document and resolves with {block} (null when nothing changed).
+	*/
+	DocEngine.prototype.edit = function(inRequest) {
+		var self = this;
+		return new Promise(function(resolve) {
+			if (inRequest.para && self.deck) {
+				resolve(self.editSlideParagraph(inRequest.para.id, inRequest.para.text));
+				return;
+			}
+			if (inRequest.para) {
+				if (!self.textSession) {
+					throw new Error("This document cannot be edited.");
+				}
+				var r = self.textSession.edit(inRequest.para.id, inRequest.para.text);
+				resolve({block: r ? r.block : null});
+				return;
+			}
+			var cell = inRequest.cell;
+			var calc = cell && self.calculator();
+			if (!calc) {
+				resolve({cells: []});
+				return;
+			}
+			var changed = calc.set(cell.sheet, cell.r, cell.c, cell.text);
+			resolve({cells: changed.map(function(x) {
+				return {sheet: x.sheet, r: x.r, c: x.c, text: x.text,
+					kind: x.t === "n" ? "n" : x.t === "b" ? "b" : x.t === "e" ? "e" : "s"};
+			})});
+		});
+	};
+
+	/**
+		A paragraph of a .pptx slide: its runs in the slide's XML are changed
+		(TextEdit's DrawingML dialect), then the deck is read again. Resolves
+		with {slide: {index, model}} (the slide to show again; its paragraphs
+		keep their ids), or {slide: null} when nothing changed.
+	*/
+	DocEngine.prototype.editSlideParagraph = function(inId, inText) {
+		var deck = this.deck;
+		var para = deck.track.paras[inId];
+		if (!para) {
+			throw new Error("This paragraph can no longer be edited.");
+		}
+		var xml = deck.files[para.part];
+		var list = TextEdit.splices(xml, para.el, inText, TextEdit.drawingDialect);
+		if (!list) {
+			return {slide: null};
+		}
+		var X = need("DocXml", "./Xml.js");
+		deck.files[para.part] = X.splice(xml, list);
+		deck.changed[para.part] = true;
+		var track = {};
+		var model = Pptx.parse(deck.files, track);
+		deck.track = track;
+		for (var i = 0; i < model.slides.length; i++) {
+			if (slideHas(model.slides[i], inId)) {
+				return {slide: {index: i, model: model.slides[i]}};
+			}
+		}
+		throw new Error("The edited slide was not found again.");
+	};
+
+	//* Whether a slide model holds the paragraph with id inId.
+	function slideHas(inSlide, inId) {
+		var found = false;
+		var walk = function(inBlocks) {
+			(inBlocks || []).forEach(function(b) {
+				if (found) {
+					return;
+				}
+				if (b.id === inId) {
+					found = true;
+				}
+				(b.rows || []).forEach(function(r) {
+					r.cells.forEach(function(c) {
+						walk(c.b);
+					});
+				});
+				(b.items || []).forEach(walk);
+				if (b.b) {
+					walk(b.b);
+				}
+			});
+		};
+		inSlide.items.forEach(function(it) {
+			walk(it.b);
+		});
+		return found;
+	}
+
+	//* The workbook's calculator, built on first use; null when it cannot be (no library, or it failed).
+	DocEngine.prototype.calculator = function() {
+		if (this.calc || this.calcFailed || !this.workbook) {
+			return this.calc;
+		}
+		try {
+			var HF = this.lib("HyperFormula");
+			var XLSX = this.lib("XLSX");
+			if (!HF || !XLSX) {
+				throw new Error("no HyperFormula");
+			}
+			this.calc = Formulas.create(HF, XLSX, this.workbook);
+		} catch (e) {
+			// Without it, a formula shows as typed until the copy is opened again.
+			this.calcFailed = true;
+			this.calc = null;
+		}
+		return this.calc;
+	};
+
+	//* A copy of the source file with inFiles ({zipPath: text, or null to remove}) changed.
+	DocEngine.prototype.writeZip = function(inFiles) {
+		var JSZip = this.lib("JSZip");
+		return JSZip.loadAsync(this.source.buffer).then(function(zip) {
+			Object.keys(inFiles).forEach(function(k) {
+				if (inFiles[k] === null) {
+					zip.remove(k);
+				} else {
+					zip.file(k, inFiles[k]);
+				}
+			});
+			var mt = zip.file("mimetype");
+			return (mt ? mt.async("string") : Promise.resolve(null)).then(function(inMime) {
+				if (inMime !== null) {
+					// OpenDocument: the mimetype comes first in the zip, and is stored, not compressed.
+					zip.file("mimetype", inMime, {compression: "STORE"});
+				}
+				return zip.generateAsync({type: "uint8array", compression: "DEFLATE", compressionOptions: {level: 6}});
+			});
+		});
+	};
+
+	//* The edits ([{sheet, r, c, text}]) and every result they changed, as SheetPatch writes them.
+	DocEngine.prototype.sheetWrites = function(inEdits) {
+		var writes = [];
+		var edited = {};
+		var values = this.calc ? this.calc.values() : {};
+		for (var i = 0; i < inEdits.length; i++) {
+			var e = inEdits[i];
+			var key = e.sheet + "," + e.r + "," + e.c;
+			edited[key] = true;
+			writes.push({sheet: e.sheet, r: e.r, c: e.c, text: e.text, value: values[key]});
+		}
+		Object.keys(values).forEach(function(k) {
+			if (!edited[k]) {
+				var p = k.split(",");
+				writes.push({sheet: +p[0], r: +p[1], c: +p[2], valueOnly: true, value: values[k]});
+			}
+		});
+		return writes;
+	};
+
+	/**
+		Writes a copy with the edits: for a workbook inRequest.edits
+		([{sheet (index in the workbook), r, c, text}]) and format "xlsx",
+		"ods" or "csv"; for a text document format "odt", or "txt"/"md"
+		with inRequest.text. Resolves with a Uint8Array.
 	*/
 	DocEngine.prototype.save = function(inRequest) {
 		var self = this;
+		var format = inRequest.format;
+		if (format === "txt" || format === "md") {
+			return Promise.resolve(new TextEncoder().encode(String(inRequest.text || "")));
+		}
+		if (format === "odt" || format === "odp") {
+			if (!this.textSession || !this.source) {
+				return Promise.reject(new Error("Nothing to save."));
+			}
+			return this.writeZip({"content.xml": this.textSession.xml});
+		}
+		if (format === "pptx") {
+			if (!this.deck || !this.source) {
+				return Promise.reject(new Error("Nothing to save."));
+			}
+			var files = {}, deck = this.deck;
+			Object.keys(deck.changed).forEach(function(k) {
+				files[k] = deck.files[k];
+			});
+			return this.writeZip(files);
+		}
+		var edits = inRequest.edits || [];
+		if (this.source && this.workbook && this.source.kind === format) {
+			return this.patchWorkbook(format, edits);
+		}
 		return new Promise(function(resolve) {
-			var edits = inRequest.edits || [];
-			var format = inRequest.format;
 			if (self.csvRows) {
 				for (var i = 0; i < edits.length; i++) {
 					var e = edits[i];
@@ -648,7 +872,55 @@
 			for (var j = 0; j < edits.length; j++) {
 				Sheets.setCell(XLSX, self.workbook, edits[j].sheet, edits[j].r, edits[j].c, edits[j].text);
 			}
+			// The results the formulas have now, so the copy shows them before it is worked out again.
+			var values = self.calc ? self.calc.values() : {};
+			Object.keys(values).forEach(function(k) {
+				var p = k.split(",");
+				var ws = self.workbook.Sheets[self.workbook.SheetNames[+p[0]]];
+				var cell = ws && ws["!data"] && ws["!data"][+p[1]] && ws["!data"][+p[1]][+p[2]];
+				if (cell && cell.f && values[k].t !== "e") {
+					cell.t = values[k].t;
+					cell.v = values[k].v;
+					delete cell.w;
+				}
+			});
 			resolve(new Uint8Array(Sheets.write(XLSX, self.workbook, format, inRequest.sheet)));
+		});
+	};
+
+	//* A copy of the .xlsx or .ods file with only the edited cells (and the results they change) rewritten.
+	DocEngine.prototype.patchWorkbook = function(inFormat, inEdits) {
+		var self = this;
+		var JSZip = this.lib("JSZip");
+		var wb = this.workbook;
+		var writes = this.sheetWrites(inEdits);
+		return JSZip.loadAsync(this.source.buffer).then(function(zip) {
+			if (inFormat === "ods") {
+				return self.readParts(zip, ["content.xml"]).then(function(parts) {
+					return SheetPatch.ods(parts, writes);
+				});
+			}
+			return self.readParts(zip, SheetPatch.xlsxParts()).then(function(parts) {
+				var paths = SheetPatch.xlsxSheetPaths(parts).filter(function(p, i) {
+					return p && writes.some(function(w) {
+						return w.sheet === i;
+					});
+				});
+				return self.readParts(zip, paths).then(function(sheetParts) {
+					for (var k in sheetParts) {
+						if (sheetParts.hasOwnProperty(k)) {
+							parts[k] = sheetParts[k];
+						}
+					}
+					return SheetPatch.xlsx(parts, writes, {formulaAt: function(inSheet, inRow, inCol) {
+						var ws = wb.Sheets[wb.SheetNames[inSheet]];
+						var row = ws && ws["!data"] && ws["!data"][inRow];
+						return row && row[inCol] && row[inCol].f || null;
+					}});
+				});
+			});
+		}).then(function(files) {
+			return self.writeZip(files);
 		});
 	};
 

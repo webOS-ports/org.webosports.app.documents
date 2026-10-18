@@ -10,11 +10,17 @@
 		doc.images   // zip paths of the pictures the blocks use
 		doc.meta     // {title, author, ...}
 
+		var track = {};
+		var doc = DocOdf.text(files, {track: track});   // editable: paragraphs get an id
+		track.paras[id]   // each paragraph's element (content.xml parsed with offsets, see Xml.js)
+		track.content, track.styles
+
 		var deck = DocOdf.presentation(files);
 		deck.slides  // [{name, width, height (px), bg, items: [{x, y, w, h, kind, ...}]}]
 
 	Blocks:
-		{t: "p", h: <heading level or 0>, s, r: [inline]}
+		{t: "p", h: <heading level or 0>, s, r: [inline], id, pt}
+		                                     id and pt (its text as tokens() gives it) when tracked
 		{t: "list", o: <ordered>, type: "decimal"|"lower-alpha"|..., start, items: [[block]]}
 		{t: "table", s, cols: [css width], rows: [{header, s, cells: [{cs, rs, s, b: [block]}]}]}
 		{t: "frame", s, b: [block]}          a text box anchored in the text
@@ -349,10 +355,10 @@
 		return this.resolve(inFamily, inName, "raw");
 	};
 
-	function loadStyles(inFiles) {
+	function loadStyles(inFiles, inOffsets) {
 		var styles = new Styles();
 		var sx = inFiles["styles.xml"] ? X.parse(inFiles["styles.xml"]) : null;
-		var cx = inFiles["content.xml"] ? X.parse(inFiles["content.xml"]) : null;
+		var cx = inFiles["content.xml"] ? X.parse(inFiles["content.xml"], {offsets: !!inOffsets}) : null;
 		// Fonts first: text properties name them.
 		if (sx) {
 			styles.addFonts(X.child(sx, "office:font-face-decls"));
@@ -380,8 +386,12 @@
 		builds blocks. One Builder per document; it collects the images and
 		the notes as it goes.
 	*/
-	function Builder(inStyles) {
+	function Builder(inStyles, inTrack) {
 		this.styles = inStyles;
+		// Paragraphs, by id, when the document is opened for editing.
+		this.paras = inTrack || null;
+		// Inside repeated table rows or cells, one paragraph is shown more than once: not editable.
+		this.repeated = 0;
 		this.images = [];
 		this.imageSet = {};
 		this.notes = [];
@@ -480,10 +490,17 @@
 		}
 		var css = merge(this.styles.resolve("paragraph", styleName, "para"),
 			this.styles.resolve("paragraph", styleName, "text"));
+		// The id first, so it is in document order (before the paragraphs of its notes and text boxes).
+		var id = this.paras && !this.repeated && inEl.p !== undefined ? this.paras.push(inEl) - 1 : -1;
 		var runs = [];
 		this.inline(inEl, runs, {});
 		var level = inEl.n === "text:h" ? Math.max(1, Math.min(6, +(inEl.a["text:outline-level"] || 1))) : 0;
-		inOut.push({t: "p", h: level, s: css, r: runs});
+		var block = {t: "p", h: level, s: css, r: runs};
+		if (id >= 0 && this.budget > 0) {
+			block.id = id;
+			block.pt = plainText(tokens(inEl));
+		}
+		inOut.push(block);
 	};
 
 	//* Appends the inline content of inEl to inOut; inCss is the span style in force.
@@ -663,6 +680,9 @@
 		var self = this;
 		var addRow = function(inRow, inHeader) {
 			var repeat = Math.min(+(inRow.a["table:number-rows-repeated"] || 1) || 1, maxRepeat);
+			if (repeat > 1) {
+				self.repeated++;
+			}
 			var rowCss = styles.resolve("table-row", inRow.a["table:style-name"], "cell");
 			var cells = [];
 			var kids = X.children(inRow);
@@ -675,6 +695,9 @@
 				if (k.n === "table:covered-table-cell") {
 					continue;
 				}
+				if (reps > 1) {
+					self.repeated++;
+				}
 				for (var r = 0; r < reps; r++) {
 					cells.push({
 						cs: +(k.a["table:number-columns-spanned"] || 1) || 1,
@@ -684,6 +707,12 @@
 						b: self.blocks(k)
 					});
 				}
+				if (reps > 1) {
+					self.repeated--;
+				}
+			}
+			if (repeat > 1) {
+				self.repeated--;
 			}
 			for (var i = 0; i < repeat; i++) {
 				rows.push({header: inHeader, s: rowCss, cells: cells});
@@ -821,13 +850,134 @@
 		An OpenDocument text. inFiles holds the package's XML parts as
 		strings: "content.xml" (required), "styles.xml", "meta.xml".
 	*/
-	function text(inFiles) {
-		var loaded = loadStyles(inFiles);
+	// --- Paragraph text, for editing ---------------------------------------
+
+	/**
+		A paragraph's content as tokens, in the order the reader shows it:
+			{k: "t", v, s, e}    text; s, e: where it is in the XML
+			{k: "w", v, el}      a space run (text:s), a tab or a line break
+			{k: "o", v, el}      an object: a picture, a note, a frame ("\ufffc"), a field (its text)
+		Elements the reader skips (bookmarks, marks) give no token and are kept.
+		Needs the paragraph parsed with offsets.
+	*/
+	function tokens(inEl, inOut) {
+		var out = inOut || [];
+		for (var i = 0; i < inEl.c.length; i++) {
+			var c = inEl.c[i];
+			if (typeof c === "string") {
+				// As Builder.inline collapses it.
+				var v = c.replace(/[\r\n\t]+/g, " ").replace(/ {2,}/g, " ");
+				if (v && inEl.co && inEl.co[i]) {
+					out.push({k: "t", v: v, s: inEl.co[i][0], e: inEl.co[i][1]});
+				}
+				continue;
+			}
+			switch (c.n) {
+			case "text:span":
+			case "text:a":
+				tokens(c, out);
+				break;
+			case "text:s":
+				out.push({k: "w", v: new Array(Math.min(+(c.a["text:c"] || 1) || 1, 200) + 1).join(" "), el: c});
+				break;
+			case "text:tab":
+				out.push({k: "w", v: "\t", el: c});
+				break;
+			case "text:line-break":
+				out.push({k: "w", v: "\n", el: c});
+				break;
+			case "text:note":
+			case "draw:frame":
+			case "draw:a":
+			case "draw:custom-shape":
+			case "draw:rect":
+			case "draw:ellipse":
+				out.push({k: "o", v: "\ufffc", el: c});
+				break;
+			case "text:soft-page-break":
+			case "text:bookmark":
+			case "text:bookmark-start":
+			case "text:bookmark-end":
+			case "text:reference-mark":
+			case "text:reference-mark-start":
+			case "text:reference-mark-end":
+			case "office:annotation":
+			case "office:annotation-end":
+			case "text:change":
+			case "text:change-start":
+			case "text:change-end":
+			case "text:alphabetical-index-mark":
+			case "text:toc-mark":
+				break;
+			default:
+				// A field (date, page number, reference): one piece, its current text.
+				var f = plainText(tokens(c, []));
+				if (f) {
+					out.push({k: "o", v: f, el: c});
+				}
+				break;
+			}
+		}
+		return out;
+	}
+
+	function plainText(inTokens) {
+		var s = "";
+		for (var i = 0; i < inTokens.length; i++) {
+			s += inTokens[i].v;
+		}
+		return s;
+	}
+
+	/**
+		One paragraph's block again, after it was edited (inEl parsed with
+		offsets). inIdOf(el) gives the id of it and of the paragraphs in it
+		(in its text boxes), -1 for one that has none.
+	*/
+	function paragraphBlock(inStyles, inEl, inIdOf) {
+		var local = [];
+		var b = new Builder(inStyles, local);
+		var out = [];
+		b.paragraph(inEl, out);
+		var block = out[out.length - 1];
+		var fix = function(inBlocks) {
+			(inBlocks || []).forEach(function(x) {
+				if (x.id !== undefined) {
+					var id = inIdOf(local[x.id]);
+					if (id >= 0) {
+						x.id = id;
+					} else {
+						delete x.id;
+						delete x.pt;
+					}
+				}
+				(x.r || []).forEach(function(run) {
+					if (run.t === "frame") {
+						fix(run.b);
+					}
+				});
+				if (x.b) {
+					fix(x.b);
+				}
+			});
+		};
+		fix([block]);
+		return {block: block, images: b.images};
+	}
+
+	function text(inFiles, inOptions) {
+		var track = inOptions && inOptions.track;
+		var loaded = loadStyles(inFiles, !!track);
 		var body = X.path(loaded.content, "office:body", "office:text");
 		if (!body) {
 			throw new Error("ODF: no office:text in content.xml");
 		}
-		var b = new Builder(loaded.styles);
+		var b = new Builder(loaded.styles, track ? [] : null);
+		if (track) {
+			track.paras = b.paras;
+			track.content = loaded.content;
+			track.styles = loaded.styles;
+		}
 		var blocks = b.blocks(body);
 		if (b.notes.length) {
 			blocks.push({t: "notes", items: b.notes});
@@ -872,14 +1022,21 @@
 		placed items in CSS pixels: text boxes (blocks), pictures and plain
 		filled shapes. Master page decoration is not drawn.
 	*/
-	function presentation(inFiles) {
-		var loaded = loadStyles(inFiles);
+	//* inOptions.track: as text(); the slides' paragraphs get ids, edited with TextEdit.js like a text document's.
+	function presentation(inFiles, inOptions) {
+		var track = inOptions && inOptions.track;
+		var loaded = loadStyles(inFiles, !!track);
 		var styles = loaded.styles;
 		var body = X.path(loaded.content, "office:body", "office:presentation");
 		if (!body) {
 			throw new Error("ODF: no office:presentation in content.xml");
 		}
-		var b = new Builder(styles);
+		var b = new Builder(styles, track ? [] : null);
+		if (track) {
+			track.paras = b.paras;
+			track.content = loaded.content;
+			track.styles = loaded.styles;
+		}
 		var slides = [];
 		var pages = X.children(body, "draw:page");
 		for (var i = 0; i < pages.length; i++) {
@@ -964,6 +1121,9 @@
 
 	var DocOdf = {
 		text: text,
+		tokens: tokens,
+		plainText: plainText,
+		paragraphBlock: paragraphBlock,
 		presentation: presentation,
 		meta: meta,
 		toPx: toPx,

@@ -258,7 +258,8 @@
 }
 
 .viewer-scroller,
-.viewer-sheet {
+.viewer-sheet,
+.viewer-docx {
 	position: absolute;
 	left: 0;
 	top: 0;
@@ -313,23 +314,41 @@
 	background: rgba(255, 255, 255, 0.18);
 }
 
-.viewer-info table {
-	width: 100%;
-	border-collapse: collapse;
-	font-size: 14px;
+/* Document Info, after the Wi-Fi settings' network info: name, a line, groups, Done */
+.viewer-info-dialog .enyo-modaldialog-title {
+	font-weight: bold;
+	word-break: break-word;
 }
 
-.viewer-info th {
-	text-align: left;
-	vertical-align: top;
+.viewer-info-subtitle {
+	text-align: center;
 	color: #666;
-	font-weight: normal;
-	padding: 3px 10px 3px 0;
+	font-size: 14px;
+	margin: -4px 0 8px;
+	word-break: break-word;
+}
+
+.viewer-info-scroller {
+	margin-bottom: 10px;
+}
+
+.viewer-info .enyo-group {
+	margin: 0 0 10px;
+}
+
+.viewer-info-row {
+	font-size: 15px;
+	align-items: baseline;
+}
+
+.viewer-info-label {
+	color: #555;
+	padding-right: 12px;
 	white-space: nowrap;
 }
 
-.viewer-info td {
-	padding: 3px 0;
+.viewer-info-value {
+	text-align: right;
 	word-break: break-word;
 }
 
@@ -518,6 +537,85 @@ h1.doc-p, h2.doc-p, h3.doc-p, h4.doc-p, h5.doc-p, h6.doc-chunk {
 	line-height: 1.45;
 }
 
+/* --- Editing text ------------------------------------------------------ */
+
+.doc-editing [data-pid] {
+	outline: 1px dashed rgba(47, 111, 181, 0.35);
+	outline-offset: 2px;
+}
+
+.doc-para-editor,
+.doc-text-host {
+	position: relative;
+}
+
+.doc-para-editor {
+	margin: 0.3em 0;
+}
+
+/* On a slide: the box under the slide, the paragraph marked where it is. */
+.doc-slide-editor {
+	margin: 0 8px 12px;
+	padding: 8px;
+	background: #fff;
+	box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+.doc-para-editing {
+	background: rgba(255, 230, 120, 0.6);
+}
+
+.doc-para-input,
+.doc-text-input {
+	display: block;
+	width: 100%;
+	box-sizing: border-box;
+	border: 2px solid #2f6fb5;
+	border-radius: 4px;
+	padding: 4px 6px;
+	resize: none;
+	overflow: hidden;
+	background: #fffef6;
+	color: #111;
+	line-height: 1.35;
+	white-space: pre-wrap;
+}
+
+.doc-plain .doc-text-input {
+	width: calc(100% - 16px);
+	min-height: 60vh;
+	padding: 12px 14px;
+}
+
+.doc-para-bar {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	margin-top: 4px;
+}
+
+.doc-para-error {
+	flex: 1;
+	color: #b00000;
+	font-size: 13px;
+}
+
+.doc-para-button {
+	margin-left: 8px;
+	padding: 6px 16px;
+	font-size: 15px;
+	border: 1px solid #8c8c8c;
+	border-radius: 4px;
+	background: linear-gradient(#fafafa, #dcdcdc);
+	color: #222;
+}
+
+.doc-para-done {
+	border-color: #3f7d33;
+	background: linear-gradient(#7ac16b, #4f9c3f);
+	color: #fff;
+}
+
 .doc-markdown-body pre {
 	background: #f2f2f2;
 	padding: 8px;
@@ -668,7 +766,8 @@ mark.find-current {
 	color: #222;
 }
 
-.sheet-edit-button {
+.sheet-edit-button,
+.sheet-digits-button {
 	margin: 2px 0 2px 4px;
 	min-width: 60px;
 	padding: 4px 10px;
@@ -984,6 +1083,11 @@ mark.find-current {
 	filter: invert(1) hue-rotate(180deg);
 }
 
+/* LibreOffice's tiles: the page as one picture, so its pictures are inverted with it */
+.night .lok-page {
+	filter: invert(0.92) hue-rotate(180deg);
+}
+
 .night .viewer-content mark.find-hit {
 	background: #6b5a10;
 }
@@ -1083,7 +1187,8 @@ mark.find-current {
 		padding: 5px 2px;
 	}
 
-	.sheet-edit-button {
+	.sheet-edit-button,
+	.sheet-digits-button {
 		min-width: 48px;
 		padding: 4px 6px;
 	}
@@ -1104,4 +1209,115 @@ mark.find-current {
 	.enyo-toolbar {
 		min-height: 46px;
 	}
+}
+
+/* --- Editing Word documents (SuperDoc) --------------------------------- */
+
+.docx-editor {
+	background: #8a8a8a;
+}
+
+.docx-editor-bar {
+	background: linear-gradient(#5a5a5a, #3c3c3c);
+	border-bottom: 1px solid #222;
+	padding: 2px 4px;
+}
+
+.docx-editor-bar .enyo-tool-button-client {
+	min-width: 36px;
+	font-size: 18px;
+	color: #f2f2f2;
+}
+
+.docx-b .enyo-tool-button-client {
+	font-weight: bold;
+}
+
+.docx-i .enyo-tool-button-client {
+	font-style: italic;
+	font-family: Georgia, serif;
+}
+
+.docx-u .enyo-tool-button-client {
+	text-decoration: underline;
+}
+
+.docx-editor-host {
+	position: relative;
+	overflow: auto;
+	-webkit-overflow-scrolling: touch;
+}
+
+.docx-editor-mount {
+	min-height: 100%;
+}
+
+/* --- Editing in LibreOffice (LokEditor) -------------------------------- */
+
+.lok-editor {
+	background: #8a8a8a;
+}
+
+.lok-host {
+	position: relative;
+	overflow: auto;
+	-webkit-overflow-scrolling: touch;
+}
+
+.lok-page {
+	position: relative;
+	margin: 8px auto;
+	background: #fff;
+	box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+.lok-tile {
+	position: absolute;
+}
+
+.lok-selection {
+	position: absolute;
+	left: 0;
+	top: 0;
+	pointer-events: none;
+}
+
+.lok-selection-rect {
+	position: absolute;
+	background: rgba(47, 111, 181, 0.3);
+}
+
+.lok-cursor {
+	position: absolute;
+	width: 2px;
+	background: #000;
+	pointer-events: none;
+	animation: lok-blink 1s steps(1) infinite;
+}
+
+@keyframes lok-blink {
+	50% {
+		opacity: 0;
+	}
+}
+
+/* Where the cursor is, invisible: it takes the typing (and a keypad's preedit) */
+.lok-input {
+	position: absolute;
+	left: 0;
+	top: 0;
+	width: 40px;
+	height: 20px;
+	opacity: 0;
+	border: 0;
+	padding: 0;
+	resize: none;
+	font-size: 16px;
+}
+
+.lok-part {
+	color: #f2f2f2;
+	font-size: 14px;
+	padding: 0 6px;
+	white-space: nowrap;
 }

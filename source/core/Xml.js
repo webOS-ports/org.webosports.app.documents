@@ -15,6 +15,18 @@
 	Not supported, because office documents do not use them: DTDs with
 	internal entities, and namespace prefixes rebound to another URI in a
 	nested scope with a different meaning.
+
+	For editing, parse(text, {offsets: true}) also records where each part
+	is in the text, so a change can be spliced into the original and the
+	rest of it kept byte for byte:
+
+		el.p, el.e     start of the start tag, end of the end tag
+		el.ci, el.ce   where the content starts and ends (equal when empty)
+		el.co[i]       [start, end] of the text child el.c[i]
+		el.ns          the namespace scope in force (for parsing a part again)
+
+	{scope, base} parse a piece cut from a larger document: its scope
+	(an el.ns) and its offset in that document.
 */
 (function(root) {
 	//* Namespace URI -> canonical prefix.
@@ -84,16 +96,29 @@
 		root element at all; tolerates stray end tags and unclosed elements
 		(they are closed at the end), as a viewer should.
 	*/
-	function parse(inText) {
+	function parse(inText, inOptions) {
 		var text = String(inText);
+		var opts = inOptions || {};
+		var at = opts.offsets;
+		var base = opts.base || 0;
 		// A byte order mark is not content.
-		if (text.charCodeAt(0) === 0xFEFF) {
+		if (text.charCodeAt(0) === 0xFEFF && !at) {
 			text = text.slice(1);
 		}
 		var doc = {n: "#document", a: {}, c: []};
+		if (at) {
+			doc.co = [];
+		}
 		var stack = [doc];
-		var scopes = [{}];
+		var scopes = [opts.scope || {}];
 		var pos = 0, len = text.length;
+		//* Ends the elements above stack[inDepth] at inAt (offsets mode).
+		var endAt = function(inDepth, inAt, inEnd) {
+			for (var u = stack.length - 1; u >= inDepth; u--) {
+				stack[u].ce = base + inAt;
+				stack[u].e = base + (u === inDepth ? inEnd : inAt);
+			}
+		};
 		while (pos < len) {
 			var lt = text.indexOf("<", pos);
 			if (lt < 0) {
@@ -102,7 +127,11 @@
 			if (lt > pos) {
 				var chunk = text.slice(pos, lt);
 				if (stack.length > 1) {
-					stack[stack.length - 1].c.push(decodeEntities(chunk));
+					var top = stack[stack.length - 1];
+					if (at) {
+						top.co[top.c.length] = [base + pos, base + lt];
+					}
+					top.c.push(decodeEntities(chunk));
 				}
 			}
 			if (lt >= len) {
@@ -120,7 +149,11 @@
 				} else if (text.substr(lt, 9) === "<![CDATA[") {
 					end = text.indexOf("]]>", lt + 9);
 					if (stack.length > 1) {
-						stack[stack.length - 1].c.push(text.slice(lt + 9, end < 0 ? len : end));
+						var ctop = stack[stack.length - 1];
+						if (at) {
+							ctop.co[ctop.c.length] = [base + lt, base + (end < 0 ? len : end + 3)];
+						}
+						ctop.c.push(text.slice(lt + 9, end < 0 ? len : end));
 					}
 					pos = end < 0 ? len : end + 3;
 				} else {
@@ -141,6 +174,9 @@
 				// Pop to the matching element; ignore an end tag nothing opened.
 				for (var s = stack.length - 1; s > 0; s--) {
 					if (stack[s].raw === closeName) {
+						if (at) {
+							endAt(s, lt, pos);
+						}
 						stack.length = s;
 						scopes.length = s;
 						break;
@@ -198,6 +234,15 @@
 					}
 				}
 				var el = {n: canonical(raw, scope), a: attrs, c: [], raw: raw};
+				if (at) {
+					el.p = base + lt;
+					el.ci = base + pos;
+					el.co = [];
+					el.ns = scope;
+					if (selfClosing) {
+						el.ce = el.e = base + pos;
+					}
+				}
 				stack[stack.length - 1].c.push(el);
 				if (!selfClosing) {
 					stack.push(el);
@@ -205,12 +250,44 @@
 				}
 			}
 		}
+		if (at && stack.length > 1) {
+			// Unclosed at the end of the text: closed there.
+			endAt(1, len, len);
+		}
 		for (var r = 0; r < doc.c.length; r++) {
 			if (typeof doc.c[r] === "object") {
 				return doc.c[r];
 			}
 		}
 		throw new Error("XML: no root element");
+	}
+
+	//* Escapes text for XML content or a quoted attribute value.
+	function escape(inText) {
+		return String(inText).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+	}
+
+	/**
+		Applies inSplices ([{s, e, v}]: replace text[s, e) by v) to inText.
+		Splices must not overlap; ones at the same place keep their order.
+	*/
+	function splice(inText, inSplices) {
+		var list = inSplices.map(function(x, i) {
+			return {s: x.s, e: x.e, v: x.v, i: i};
+		}).sort(function(a, b) {
+			return a.s - b.s || a.e - b.e || a.i - b.i;
+		});
+		var out = [], from = 0;
+		for (var i = 0; i < list.length; i++) {
+			var x = list[i];
+			if (x.s < from) {
+				throw new Error("XML: overlapping changes");
+			}
+			out.push(inText.slice(from, x.s), x.v);
+			from = x.e;
+		}
+		out.push(inText.slice(from));
+		return out.join("");
 	}
 
 	// --- Helpers for walking the tree ------------------------------------
@@ -294,6 +371,8 @@
 		path: path,
 		findAll: findAll,
 		textOf: textOf,
+		escape: escape,
+		splice: splice,
 		namespaces: namespaces
 	};
 

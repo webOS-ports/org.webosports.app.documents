@@ -26,9 +26,10 @@
 		csv: {family: "sheet", label: "Comma-separated values", mime: "text/csv"},
 		pptx: {family: "slides", label: "PowerPoint presentation", mime: "application/vnd.openxmlformats-officedocument.presentationml.presentation"},
 		odp: {family: "slides", label: "OpenDocument presentation", mime: "application/vnd.oasis.opendocument.presentation"},
-		doc: {family: null, label: "Word 97-2003 document", mime: "application/msword"},
-		ppt: {family: null, label: "PowerPoint 97-2003 presentation", mime: "application/vnd.ms-powerpoint"},
-		rtf: {family: null, label: "Rich text", mime: "application/rtf"},
+		// Read by LibreOffice (org.webosports.service.office) when it is installed: converted to "convert", shown as "shownAs".
+		doc: {family: null, label: "Word 97-2003 document", mime: "application/msword", convert: "odt", shownAs: "text"},
+		ppt: {family: null, label: "PowerPoint 97-2003 presentation", mime: "application/vnd.ms-powerpoint", convert: "odp", shownAs: "slides"},
+		rtf: {family: null, label: "Rich text", mime: "application/rtf", convert: "odt", shownAs: "text"},
 		pdf: {family: null, label: "PDF document", mime: "application/pdf", handOff: true}
 	};
 
@@ -85,10 +86,21 @@
 		return kinds[inKind] && kinds[inKind].handOff ? kinds[inKind].mime : null;
 	}
 
-	//* True when the name has an extension of a kind the library lists: one the viewer opens or hands on.
+	//* Whether LibreOffice converts documents on this device (FileTypes.converter = true, once the app has asked).
+	function convertsTo(inKind) {
+		return FileTypes.converter && kinds[inKind] && kinds[inKind].convert || null;
+	}
+
+	//* The family a kind is shown as: its own, or that of what LibreOffice makes of it.
+	function familyOf(inKind) {
+		var k = kinds[inKind];
+		return k ? k.family || (convertsTo(inKind) ? k.shownAs : null) : null;
+	}
+
+	//* True when the name has an extension of a kind the library lists: one the viewer opens, converts or hands on.
 	function isDocumentName(inName) {
 		var kind = kindFromName(inName);
-		return isSupported(kind) || !!handOffMime(kind);
+		return isSupported(kind) || !!convertsTo(kind) || !!handOffMime(kind);
 	}
 
 	/**
@@ -230,6 +242,11 @@
 		isSupported: isSupported,
 		handOffMime: handOffMime,
 		isDocumentName: isDocumentName,
+		convertsTo: convertsTo,
+		familyOf: familyOf,
+		converter: false,
+		// Whether the office service keeps documents open for editing (App.findConverter)
+		lokSessions: false,
 		sniff: sniff,
 		looksLikeText: looksLikeText,
 		kindFromZip: kindFromZip,

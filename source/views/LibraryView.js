@@ -76,7 +76,7 @@ enyo.kind({
 	},
 
 	matches: function(inDoc, inQuery) {
-		var family = FileTypes.kinds[inDoc.kind] ? FileTypes.kinds[inDoc.kind].family : null;
+		var family = FileTypes.familyOf(inDoc.kind);
 		if (this.filters[this.filter] && family !== this.filters[this.filter]) {
 			return false;
 		}
@@ -97,7 +97,7 @@ enyo.kind({
 		var self = this;
 		var add = function(inDoc, inRecent) {
 			rows.push(inDoc);
-			var family = FileTypes.kinds[inDoc.kind] ? FileTypes.kinds[inDoc.kind].family : "text";
+			var family = FileTypes.kinds[inDoc.kind] ? FileTypes.familyOf(inDoc.kind) : "text";
 			var folder = String(inDoc.dir || DocLibrary.dirName(inDoc.path)).replace(/^\/media\/internal\/?/, "");
 			var sub = inRecent && inDoc.opened ? self.when(inDoc.opened) : (folder || $L("USB storage"));
 			html.push("<div class=\"library-item\" data-row=\"" + (rows.length - 1) + "\">" +
