@@ -906,6 +906,12 @@ t.test("LibreOffice editing: a session's tiles, taps, typing, Bold, the next sli
 	assert.ok(unos.some(function(u) {
 		return u.params.command === ".uno:Bold";
 	}), JSON.stringify(unos));
+	// Night reading darkens LibreOffice's page too
+	assert.strictEqual(await page.eval("getComputedStyle(document.querySelector('.lok-page')).filter"), "none");
+	await page.eval("documentsApp.$.viewer.toggleNight(); 1");
+	var lokFilter = await page.eval("getComputedStyle(document.querySelector('.lok-page')).filter");
+	await page.eval("documentsApp.$.viewer.toggleNight(); 1");
+	assert.ok(/invert/.test(lokFilter), "night: " + lokFilter);
 	// The next slide
 	assert.strictEqual(await page.eval("documentsApp.$.viewer.$.lok.$.partLabel.content"), "1 of 2");
 	await page.eval("documentsApp.$.viewer.$.lok.nextPart(); 1");

@@ -1083,6 +1083,11 @@ mark.find-current {
 	filter: invert(1) hue-rotate(180deg);
 }
 
+/* LibreOffice's tiles: the page as one picture, so its pictures are inverted with it */
+.night .lok-page {
+	filter: invert(0.92) hue-rotate(180deg);
+}
+
 .night .viewer-content mark.find-hit {
 	background: #6b5a10;
 }
