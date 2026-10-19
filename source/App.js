@@ -2,8 +2,9 @@
 	Documents: reads Word, OpenDocument, Excel, PowerPoint, CSV, text and
 	Markdown files on LuneOS.
 
-	Two screens in a Pane: the library (every document on the device, the
-	recent ones first) and the viewer. Opened from another app with
+	Three screens in a Pane: the library (every document on the device, the
+	recent ones first), the cloud (documents in online accounts, see
+	CloudView.js) and the viewer. Opened from another app with
 	{"target": "file:///media/internal/..."} it goes straight to that
 	document; the back gesture then returns to the library.
 */
@@ -26,7 +27,8 @@ enyo.kind({
 			{caption: $L("About Documents"), onclick: "showAbout"}
 		]},
 		{name: "pane", kind: "Pane", flex: 1, transitionKind: "enyo.transitions.Simple", onSelectView: "viewSelected", components: [
-			{name: "library", kind: "LibraryView", onOpenDocument: "openDocument", onRefresh: "rescan"},
+			{name: "library", kind: "LibraryView", onOpenDocument: "openDocument", onRefresh: "rescan", onCloud: "showCloud"},
+			{name: "cloud", kind: "CloudView", onOpenCloudDocument: "openCloudDocument", onLibrary: "showLibrary"},
 			{name: "viewer", kind: "ViewerView", lazy: false, onOpenLink: "openLink", onSaveCopy: "askSaveCopy",
 				onNight: "nightChanged", onOpened: "documentOpened", onHandOff: "handOffFromViewer"}
 		]},
@@ -187,7 +189,14 @@ enyo.kind({
 
 	// --- Viewer ----------------------------------------------------------
 
-	openDocument: function(inSender, inPath) {
+	/**
+		Opens a local file. inCloud (optional) says where a downloaded one is
+		from: {account, folderPath, folderName, place, names}; a recently
+		opened one keeps it, so it can be saved back to its folder again.
+	*/
+	openDocument: function(inSender, inPath, inCloud) {
+		this.cloudOrigin = inCloud ? enyo.mixin({localPath: inPath}, inCloud) : this.recentOrigin(inPath);
+		this.returnTo = "library";
 		var mime = FileTypes.handOffMime(FileTypes.kindFromName(inPath));
 		if (mime) {
 			// A PDF goes to the app that shows PDFs; if none answers, the
@@ -206,8 +215,75 @@ enyo.kind({
 
 	showViewer: function(inPath) {
 		this.$.library.setHidden(true);
-		this.$.pane.selectViewByName("viewer");
-		this.$.viewer.openPath(inPath);
+		this.selectView("viewer");
+		var cloud = this.cloudFor(inPath);
+		this.$.viewer.openPath(inPath, cloud ? cloud.place || cloud.account.provider : null);
+	},
+
+	// --- Cloud -----------------------------------------------------------
+
+	showCloud: function() {
+		this.selectView("cloud");
+		this.$.cloud.start();
+	},
+
+	showLibrary: function() {
+		this.selectView("library");
+	},
+
+	//* Where the document at inPath came from, if it was downloaded from the cloud; else null.
+	cloudFor: function(inPath) {
+		var o = this.cloudOrigin;
+		return o && o.localPath === inPath ? o : null;
+	},
+
+	//* The cloud origin a recently opened document at inPath was kept with, or null.
+	recentOrigin: function(inPath) {
+		var r = (this.prefs.recent || []).filter(function(d) {
+			return d.path === inPath && d.cloud;
+		})[0];
+		return r && CloudService.isOrigin(r.cloud) ? enyo.mixin({localPath: inPath}, r.cloud) : null;
+	},
+
+	/**
+		A document tapped in the cloud view (inDoc: {account, entry,
+		folderPath, folderName, place, names}): downloaded into the cache,
+		then opened as any local file. Back while it downloads gives up
+		waiting.
+	*/
+	openCloudDocument: function(inSender, inDoc) {
+		var self = this;
+		var cloud = this.$.cloud;
+		var token = this.downloading = {};
+		cloud.setBusy($L("Downloading #{name}\u2026").replace("#{name}", inDoc.entry.name));
+		CloudService.download(inDoc.account, inDoc.entry, function(inErr, inPath) {
+			if (self.downloading !== token) {
+				return;
+			}
+			self.downloading = null;
+			cloud.setBusy(null);
+			if (inErr) {
+				enyo.warn("download of " + inDoc.entry.name + " failed: " + inErr.message);
+				self.toast($L("#{name} could not be downloaded. ").replace("#{name}", inDoc.entry.name) +
+					CloudService.describeError(inErr));
+				return;
+			}
+			if (self.$.pane.getViewName() !== "cloud") {
+				return;
+			}
+			self.openDocument(null, inPath, {account: inDoc.account, folderPath: inDoc.folderPath || null,
+				folderName: inDoc.folderName, place: inDoc.place, names: inDoc.names});
+			self.returnTo = "cloud";
+		});
+	},
+
+	cancelDownload: function() {
+		if (this.downloading) {
+			this.downloading = null;
+			this.$.cloud.setBusy(null);
+			return true;
+		}
+		return false;
 	},
 
 	//* The viewer found a file another app shows behind a misleading name (a PDF called ".docx").
@@ -218,23 +294,47 @@ enyo.kind({
 				enyo.warn("no app opened " + inPath + " as " + inMime + ": " + inErr.message);
 				self.$.viewer.handOffFailed();
 			} else if (self.$.pane.getViewName() === "viewer" && self.$.viewer.path === inPath) {
-				self.$.pane.selectViewByName("library");
+				self.selectView("library");
 			}
 		});
 	},
 
 	documentOpened: function(inSender, inPath, inKind) {
-		this.prefs.recent = DocLibrary.addRecent(this.prefs.recent, {path: inPath, name: DocLibrary.baseName(inPath),
-			kind: FileTypes.kindFromName(inPath), opened: Date.now()});
+		var entry = {path: inPath, name: DocLibrary.baseName(inPath), kind: FileTypes.kindFromName(inPath), opened: Date.now()};
+		var cloud = this.cloudFor(inPath);
+		if (cloud) {
+			// Kept to say where it is from and to save copies back there; the folder's names are not
+			entry.cloud = {account: cloud.account, folderPath: cloud.folderPath, folderName: cloud.folderName, place: cloud.place};
+		}
+		this.prefs.recent = DocLibrary.addRecent(this.prefs.recent, entry);
 		this.savePrefs();
 		this.$.library.setRecent(this.prefs.recent);
 
 	},
 
+	/**
+		Shows one of the Pane's views. The Pane selects views a moment
+		later, so the library's onSelectView can come after the viewer was
+		asked for (back, then a document at once): the view asked for last
+		is the one that counts until its own onSelectView.
+	*/
+	selectView: function(inName) {
+		this.viewWanted = inName;
+		this.$.pane.selectViewByName(inName);
+	},
+
 	viewSelected: function(inSender, inView) {
-		this.$.library.setHidden(!inView || inView.name !== "library");
-		if (inView && inView.name === "library") {
+		var name = inView && inView.name;
+		var wanted = this.viewWanted || name;
+		if (name === this.viewWanted) {
+			this.viewWanted = null;
+		}
+		this.$.library.setHidden(wanted !== "library");
+		if (wanted !== "viewer") {
 			this.$.viewer.close();
+		}
+		if (wanted !== "cloud") {
+			this.cancelDownload();
 		}
 	},
 
@@ -245,7 +345,12 @@ enyo.kind({
 			this.closeAbout();
 		} else if (this.$.pane.getViewName() === "viewer") {
 			if (!this.$.viewer.back()) {
-				this.$.pane.selectViewByName("library");
+				// To the cloud folder a downloaded document was opened from, else the library
+				this.selectView(this.returnTo === "cloud" ? "cloud" : "library");
+			}
+		} else if (this.$.pane.getViewName() === "cloud") {
+			if (!this.cancelDownload() && !this.$.cloud.back()) {
+				this.selectView("library");
 			}
 		} else {
 			// On the library, back is the system's (the card is minimised).
@@ -325,7 +430,8 @@ enyo.kind({
 	askSaveCopy: function() {
 		var v = this.$.viewer;
 		var req = v.saveRequest();
-		var existing = this.docs.filter(function(d) {
+		var cloud = this.cloudFor(v.path);
+		var existing = cloud ? cloud.names || [] : this.docs.filter(function(d) {
 			return d.dir === DocLibrary.dirName(v.path);
 		}).map(function(d) {
 			return d.name;
@@ -335,7 +441,8 @@ enyo.kind({
 		this.$.saveError.hide();
 		this.$.saveOk.setActive(false);
 		this.$.saveOk.setDisabled(false);
-		var note = $L("A new file next to the original; the original is not changed.");
+		var note = cloud ? $L("A new file in the same folder in #{cloud}; the original is not changed.").replace("#{cloud}", cloud.account.provider) :
+			$L("A new file next to the original; the original is not changed.");
 		if (v.doc.kind === "xls") {
 			note += " " + $L("It is saved as .xlsx, with the values and formulas but not the formatting, charts or pictures.");
 		} else if (v.doc.kind === "txt" || v.doc.kind === "md") {
@@ -360,24 +467,67 @@ enyo.kind({
 		if (FileTypes.extensionOf(name) !== req.format) {
 			name += "." + req.format;
 		}
-		var path = DocLibrary.dirName(v.path) + "/" + name;
+		// A downloaded document's copy is written next to the download, then uploaded to its folder as name
+		var cloud = this.cloudFor(v.path);
+		var path = cloud ? CloudService.copyPath(v.path, name) : DocLibrary.dirName(v.path) + "/" + name;
 		this.$.saveOk.setActive(true);
 		this.$.saveOk.setDisabled(true);
-		v.makeCopy(req, function(inErr, inBytes) {
+		if (cloud) {
+			// The connectors replace a file of the same name: never upload over one
+			CloudService.list(cloud.account, cloud.folderPath, function(inErr, inEntries) {
+				if (inErr) {
+					self.saveFailed(CloudService.describeError(inErr));
+				} else if (CloudService.hasName(inEntries, name)) {
+					self.saveFailed($L("A file with that name already exists."));
+				} else {
+					self.writeCopy(req, path, name, cloud);
+				}
+			});
+			return;
+		}
+		this.writeCopy(req, path, name, null);
+	},
+
+	writeCopy: function(inRequest, inPath, inName, inCloud) {
+		var self = this;
+		var v = this.$.viewer;
+		v.makeCopy(inRequest, function(inErr, inBytes) {
 			if (inErr) {
 				self.saveFailed(inErr.message);
 				return;
 			}
-			FileService.writeNew(path, new Uint8Array(inBytes.buffer || inBytes, inBytes.byteOffset || 0, inBytes.byteLength), function(inErr2) {
+			FileService.writeNew(inPath, new Uint8Array(inBytes.buffer || inBytes, inBytes.byteOffset || 0, inBytes.byteLength), function(inErr2) {
 				if (inErr2) {
 					self.saveFailed(inErr2.code === "EEXIST" || /exists/i.test(inErr2.message) ?
 						$L("A file with that name already exists.") : $L("The copy could not be saved: ") + inErr2.message);
 					return;
 				}
+				if (inCloud) {
+					self.uploadCopy(inCloud, inPath, inName);
+					return;
+				}
 				self.$.saveDialog.close();
-				self.toast($L("Saved as #{name}").replace("#{name}", name));
+				self.toast($L("Saved as #{name}").replace("#{name}", inName));
 				self.rescan();
 			});
+		});
+	},
+
+	//* The copy written at inPath goes to the cloud folder the document came from, as inName.
+	uploadCopy: function(inCloud, inPath, inName) {
+		var self = this;
+		this.$.saveNote.setContent(enyo.string.escapeHtml($L("Uploading to #{cloud}\u2026").replace("#{cloud}", inCloud.account.provider)));
+		CloudService.upload(inCloud.account, inCloud.folderPath, inPath, inName, function(inErr) {
+			if (inErr) {
+				enyo.warn("upload of " + inName + " failed: " + inErr.message);
+				self.saveFailed($L("The copy could not be uploaded. ") + CloudService.describeError(inErr));
+				return;
+			}
+			if (inCloud.names) {
+				inCloud.names.push(inName);
+			}
+			self.$.saveDialog.close();
+			self.toast($L("Saved as #{name} in #{cloud}").replace("#{name}", inName).replace("#{cloud}", inCloud.place || inCloud.account.provider));
 		});
 	},
 

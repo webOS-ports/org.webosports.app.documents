@@ -15,6 +15,7 @@ enyo.depends(
 	"source/core/Library.js",
 	"source/services/DocLoader.js",
 	"source/services/FileService.js",
+	"source/services/CloudService.js",
 	"source/views/DocRender.js",
 	"source/views/DialogFit.js",
 	"source/views/Finder.js",
@@ -24,6 +25,7 @@ enyo.depends(
 	"source/views/LokEditor.js",
 	"source/views/ViewerView.js",
 	"source/views/LibraryView.js",
+	"source/views/CloudView.js",
 	"source/App.js",
 	"css/documents.css"
 );

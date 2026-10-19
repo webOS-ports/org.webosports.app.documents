@@ -26,6 +26,7 @@ var SHOTS = process.argv.indexOf("--screenshots") >= 0;
 var XLSX = require(path.join(ROOT, "lib/sheetjs/xlsx.full.min.js"));
 var mockSource = fs.readFileSync(path.join(__dirname, "mock", "webos-mock.js"), "utf8");
 var appinfo = JSON.parse(fs.readFileSync(path.join(ROOT, "appinfo.json"), "utf8"));
+var Cloud = require(path.join(ROOT, "source/services/CloudService.js"));
 
 var server, browser, page;
 
@@ -61,6 +62,60 @@ function makeE2eRoot() {
 	var pdf = Buffer.from("%PDF-1.4\n1 0 obj << >> endobj\ntrailer << >>\n%%EOF\n");
 	fs.writeFileSync(path.join(E2E_ROOT, "Manual 1.pdf"), pdf);
 	fs.writeFileSync(path.join(E2E_ROOT, "scan.docx"), pdf);
+	// What the connector's downloadFile leaves in the cloud cache, where the app asks for it
+	[[CLOUD.plan, "sample.odt"], [CLOUD.budget, "sample.xlsx"], [CLOUD.notes, "sample.txt"]].forEach(function(inPair) {
+		var local = path.join(E2E_ROOT, Cloud.cachePath(CLOUD.dropbox, inPair[0]).replace(/^\/media\/internal\//, ""));
+		fs.mkdirSync(path.dirname(local), {recursive: true});
+		fs.copyFileSync(path.join(FIX, inPair[1]), local);
+	});
+}
+
+// --- The cloud: a Dropbox account and a Box one, through their connectors -------------
+
+var CLOUD = {
+	dropbox: {id: "acc1", provider: "Dropbox", name: "Herrie", service: "com.palm.service.dropbox"},
+	box: {id: "acc2", provider: "Box", name: "work@example.com", service: "com.palm.service.boxnet"},
+	plan: {id: "id:plan", type: "file", name: "Plan.odt", size: 9000, modified: "2026-05-01T10:00:00Z", path: "/Work/Plan.odt"},
+	budget: {id: "id:budget", type: "file", name: "Budget.xlsx", size: 7000, modified: "2026-05-02T10:00:00Z", path: "/Work/Budget.xlsx"},
+	notes: {id: "id:notes", type: "file", name: "notes.txt", size: 12, path: "/Work/notes.txt"}
+};
+
+function cloudLuna() {
+	var account = function(inAccount, inPhotos) {
+		var providers = [{capability: "DOCUMENTS", implementation: "palm://" + inAccount.service + "/"}];
+		if (inPhotos) {
+			providers.unshift({capability: "PHOTO.UPLOAD", implementation: "palm://com.palm.service.photos"});
+		}
+		return {_id: inAccount.id, alias: inAccount.name === "Herrie" ? "Herrie" : "", username: inAccount.name,
+			loc_name: inAccount.provider, capabilityProviders: providers};
+	};
+	return {
+		"luna://com.palm.service.accounts/listAccounts": {cases: [{when: {capability: "DOCUMENTS"}, json: {results: [
+			account(CLOUD.dropbox, true), account(CLOUD.box),
+			// Photos only: not listed
+			{_id: "acc3", username: "pics", loc_name: "Flickr", capabilityProviders: [
+				{capability: "PHOTO.UPLOAD", implementation: "palm://com.palm.service.flickr/"}]}
+		]}}], error: {errorCode: -1, errorText: "capability needed"}},
+		"luna://com.palm.service.dropbox/listFolder": {cases: [
+			{when: {accountId: "acc1", path: "/Work"}, json: {entries: [
+				CLOUD.plan, CLOUD.budget,
+				{id: "id:old", type: "file", name: "Budget (old).xlsx", size: 7000, path: "/Work/Budget (old).xlsx"},
+				CLOUD.notes,
+				{id: "id:photo", type: "file", name: "photo.jpg", size: 30000, path: "/Work/photo.jpg"},
+				{id: "id:reports", type: "folder", name: "Reports", path: "/Work/Reports"}
+			]}},
+			{when: {accountId: "acc1", path: "/Work/Reports"}, json: {entries: []}},
+			{when: {accountId: "acc1"}, json: {entries: [
+				{id: "id:work", type: "folder", name: "Work", path: "/Work"},
+				{id: "id:song", type: "file", name: "song.mp3", size: 4000000, path: "/song.mp3"},
+				{id: "id:welcome", type: "file", name: "Welcome.pdf", size: 120000, path: "/Welcome.pdf"}
+			]}}
+		], error: {errorCode: "MISSING_ARGS", errorText: "unexpected listFolder"}},
+		// Slow enough to see it busy
+		"luna://com.palm.service.dropbox/downloadFile": {delay: 300, json: {path: "ignored"}},
+		"luna://com.palm.service.dropbox/uploadFile": {delay: 100, json: {id: "id:new", name: "x", size: 1}},
+		"luna://com.palm.service.boxnet/listFolder": {error: {errorCode: "NO_STORED_CREDENTIALS"}}
+	};
 }
 
 function fixtureFiles() {
@@ -83,15 +138,18 @@ function acg() {
 	});
 	// The installer gives an app the group of its own service.
 	groups["org.webosports.app.documents.service.group"] = ["org.webosports.app.documents.service/*"];
-	return {groups: groups, granted: appinfo.requiredPermissions.concat(["org.webosports.app.documents.service.group"]),
+	// The cloud connectors' perm.json files (luneos-synergy-connectors) give this app their groups.
+	var connectors = ["synergy-dropbox.operation", "synergy-box.operation"];
+	return {groups: groups, granted: appinfo.requiredPermissions.concat(["org.webosports.app.documents.service.group"], connectors),
 		// Enyo 1's test hook, which it asks for at start on every device (and is told is not there).
 		exempt: ["^luna://com\\.palm\\.telluriumservice/"]};
 }
 
 /**
 	A LuneOS device with the fixtures on its USB storage. inOptions:
-	launchParams, service (true: the app's service is installed), luna (more
-	rules), storage, palmSystem.
+	launchParams, service (true: the app's service is installed), cloud
+	(true: cloud accounts, see cloudLuna), luna (more rules), storage,
+	palmSystem.
 */
 function scenario(inOptions) {
 	var o = inOptions || {};
@@ -144,6 +202,9 @@ function scenario(inOptions) {
 			"luna://org.webosports.service.office/close": ok
 		});
 	}
+	if (o.cloud) {
+		Object.assign(luna, cloudLuna());
+	}
 	Object.assign(luna, o.luna || {});
 	return {
 		webos: true,
@@ -152,7 +213,7 @@ function scenario(inOptions) {
 		luna: luna,
 		acg: acg(),
 		rewrite: [
-			{from: "^file:///media/internal/(big\\.csv|legacy\\.doc|Manual(%20| )1\\.pdf|scan\\.docx|Work/|\\.cache/)", to: server.url + "/test-output/e2e-root/$1"},
+			{from: "^file:///media/internal/(big\\.csv|legacy\\.doc|Manual(%20| )1\\.pdf|scan\\.docx|Work/|\\.cache/|\\.documents/)", to: server.url + "/test-output/e2e-root/$1"},
 			{from: "^file:///media/internal/", to: server.url + "/tools/tests/fixtures/"}
 		],
 		http: [],
@@ -1001,21 +1062,225 @@ t.test("LibreOffice editing: not offered by a service without sessions", async f
 	assert.strictEqual(await page.eval("documentsApp.$.menuLok.showing"), false);
 });
 
+// --- Cloud ------------------------------------------------------------------------
+
+//* The names the cloud view lists, once it has its answer.
+async function cloudNames() {
+	await page.waitFor("!documentsApp.$.cloud.loading", 5000);
+	return page.eval("Array.prototype.map.call(document.querySelectorAll('.cloud .library-name'), function(e){return e.textContent;})");
+}
+
+//* A real tap on the cloud view's row called inName.
+async function tapCloud(inName) {
+	var names = await cloudNames();
+	assert.ok(names.indexOf(inName) >= 0, inName + " listed: " + names.join(", "));
+	await page.tap(".cloud .cloud-item:nth-child(" + (names.indexOf(inName) + 1) + ")");
+}
+
+//* From the library, through the Cloud button, into Dropbox's Work folder.
+async function cloudWorkFolder() {
+	await libraryNames();
+	await page.tap(".library-cloud");
+	await page.waitFor("documentsApp.$.pane.getViewName() === 'cloud'");
+	await tapCloud("Dropbox");
+	await tapCloud("Work");
+	await cloudNames();
+}
+
+async function back() {
+	await page.eval("documentsApp.goBack(); 1");
+	await browserLib.sleep(50);
+}
+
+t.test("cloud: library, Cloud, an account, a folder; a document is downloaded into the cache and shown", async function() {
+	await open(scenario({cloud: true}));
+	await libraryNames();
+	await page.tap(".library-cloud");
+	await page.waitFor("documentsApp.$.pane.getViewName() === 'cloud'");
+	assert.deepStrictEqual(await cloudNames(), ["Box", "Dropbox"], "the accounts with documents, not the photos-only one");
+	var accounts = await calls("luna", "accounts/listAccounts");
+	assert.deepStrictEqual(accounts[0].params, {capability: "DOCUMENTS"});
+	assert.strictEqual(accounts[0].acg, "granted", "appinfo.json asks for accountsservice.operation");
+	await tapCloud("Dropbox");
+	assert.deepStrictEqual(await cloudNames(), ["Work", "Welcome.pdf"], "folders first; only documents");
+	await tapCloud("Work");
+	assert.deepStrictEqual(await cloudNames(), ["Reports", "Budget (old).xlsx", "Budget.xlsx", "notes.txt", "Plan.odt"]);
+	assert.deepStrictEqual((await calls("luna", "dropbox/listFolder")).map(function(c) {
+		return c.params;
+	}), [{accountId: "acc1"}, {accountId: "acc1", path: "/Work"}], "the top folder without a path, then the entry's path");
+	assert.strictEqual(await text(".cloud-header .library-title"), "Work");
+	assert.strictEqual(await text(".cloud-subtitle"), "Dropbox \u00b7 Work");
+	// Filtered as the library is; folders stay
+	await page.tap(".cloud-toolbar .library-filters .enyo-grouped-toolbutton:nth-child(3)");
+	assert.deepStrictEqual(await cloudNames(), ["Reports", "Budget (old).xlsx", "Budget.xlsx"]);
+	await page.tap(".cloud-toolbar .library-filters .enyo-grouped-toolbutton:nth-child(1)");
+	await tapCloud("Plan.odt");
+	await page.waitFor("documentsApp.$.cloud.isBusy() && /Downloading Plan\\.odt/.test(documentsApp.$.cloud.$.busyText.content)");
+	assert.strictEqual(await waitOpened(), "odt");
+	var d = await calls("luna", "dropbox/downloadFile");
+	assert.strictEqual(d.length, 1);
+	assert.deepStrictEqual(d[0].params, {accountId: "acc1", path: "/Work/Plan.odt", localPath: Cloud.cachePath(CLOUD.dropbox, CLOUD.plan)});
+	assert.strictEqual(d[0].acg, "granted");
+	assert.ok(/^\/media\/internal\/\.documents\/cloud\/acc1\/[0-9a-f]{8}\/Plan\.odt$/.test(d[0].params.localPath), d[0].params.localPath);
+	assert.strictEqual(await text(".viewer-title"), "Plan.odt");
+	assert.ok(/ \u00b7 Dropbox \u00b7 Work$/.test(await text(".viewer-subtitle")), await text(".viewer-subtitle"));
+	assert.strictEqual(await page.eval("documentsApp.$.cloud.isBusy()"), false);
+	// It is recent, and says where it is from
+	var recent = await page.eval("JSON.parse(localStorage.getItem('documents.prefs')).recent[0]");
+	assert.strictEqual(recent.path, d[0].params.localPath);
+	assert.deepStrictEqual([recent.cloud.account.id, recent.cloud.folderPath], ["acc1", "/Work"]);
+});
+
+t.test("cloud: back goes from the document to its folder, up the folders, to the accounts and the library", async function() {
+	await open(scenario({cloud: true}));
+	await cloudWorkFolder();
+	await tapCloud("Reports");
+	assert.deepStrictEqual(await cloudNames(), []);
+	assert.ok(/empty/.test(await text(".cloud-status")), await text(".cloud-status"));
+	assert.strictEqual(await text(".cloud-subtitle"), "Dropbox \u00b7 Work \u203a Reports");
+	await back();
+	assert.deepStrictEqual(await cloudNames(), ["Reports", "Budget (old).xlsx", "Budget.xlsx", "notes.txt", "Plan.odt"]);
+	await tapCloud("notes.txt");
+	assert.strictEqual(await waitOpened(), "txt");
+	await back();
+	assert.strictEqual(await page.eval("documentsApp.$.pane.getViewName()"), "cloud", "back from the document: its folder");
+	assert.strictEqual(await text(".cloud-header .library-title"), "Work");
+	// The toolbar's arrow goes up too
+	await tapControl("documentsApp.$.cloud.$.backButton");
+	assert.deepStrictEqual(await cloudNames(), ["Work", "Welcome.pdf"]);
+	await back();
+	assert.deepStrictEqual(await cloudNames(), ["Box", "Dropbox"]);
+	assert.strictEqual((await calls("luna", "accounts/listAccounts")).length, 1, "the accounts are not asked for again");
+	await back();
+	assert.strictEqual(await page.eval("documentsApp.$.pane.getViewName()"), "library");
+	// Back while a document downloads gives up waiting for it
+	await page.tap(".library-cloud");
+	await tapCloud("Dropbox");
+	await tapCloud("Work");
+	await tapCloud("Plan.odt");
+	await page.waitFor("documentsApp.$.cloud.isBusy()");
+	await back();
+	assert.strictEqual(await page.eval("documentsApp.$.cloud.isBusy()"), false);
+	await browserLib.sleep(500);
+	assert.strictEqual(await page.eval("documentsApp.$.pane.getViewName()"), "cloud", "the download that came late is not opened");
+	assert.strictEqual(await text(".cloud-header .library-title"), "Work");
+});
+
+t.test("cloud: a recently opened cloud document opens its downloaded copy and says where it is from", async function() {
+	var local = Cloud.cachePath(CLOUD.dropbox, CLOUD.plan);
+	await open(scenario({cloud: true, storage: {clear: true, set: {"documents.prefs": {recent: [{path: local, name: "Plan.odt", kind: "odt",
+		opened: Date.now(), cloud: {account: CLOUD.dropbox, folderPath: "/Work", folderName: "Work", place: "Dropbox \u00b7 Work"}}]}}}}));
+	await libraryNames();
+	assert.ok(/^Dropbox \u00b7 /.test(await text(".library-item .library-sub")), await text(".library-item .library-sub"));
+	await page.tap(".library-item");
+	assert.strictEqual(await waitOpened(), "odt");
+	assert.ok(/ \u00b7 Dropbox \u00b7 Work$/.test(await text(".viewer-subtitle")), await text(".viewer-subtitle"));
+	assert.strictEqual((await calls("luna", "downloadFile")).length, 0, "no download");
+	await back();
+	assert.strictEqual(await page.eval("documentsApp.$.pane.getViewName()"), "library", "opened from the library, back to it");
+});
+
+t.test("cloud: errors and no accounts are said plainly; Try Again asks again", async function() {
+	await open(scenario({cloud: true}));
+	await libraryNames();
+	await page.tap(".library-cloud");
+	await tapCloud("Box");
+	assert.deepStrictEqual(await cloudNames(), []);
+	assert.strictEqual(await text(".cloud-status .library-scanning, .cloud-status div"), "Sign in to this account again in Accounts.");
+	assert.ok(await page.eval("documentsApp.$.cloud.$.retryButton.showing"));
+	await tapControl("documentsApp.$.cloud.$.retryButton");
+	await cloudNames();
+	assert.strictEqual((await calls("luna", "boxnet/listFolder")).length, 2);
+	// A download that fails is reported, and the folder stays
+	await back();
+	await tapCloud("Dropbox");
+	await page.eval("__MOCK__.set('luna', 'luna://com.palm.service.dropbox/downloadFile', {error: {errorCode: 'PERMISSION_DENIED', " +
+		"errorText: \"caller 'x' is not permitted\"}}); 1");
+	await tapCloud("Welcome.pdf");
+	await page.waitFor("documentsApp.$.toaster.showing");
+	assert.ok(/Welcome\.pdf could not be downloaded\. This account's service does not let Documents use it\./.test(
+		await page.eval("documentsApp.$.toaster.content")), await page.eval("documentsApp.$.toaster.content"));
+	assert.strictEqual(await page.eval("documentsApp.$.pane.getViewName()"), "cloud");
+
+	await open(scenario({cloud: true, luna: {"luna://com.palm.service.accounts/listAccounts": {json: {results: []}}}}));
+	await libraryNames();
+	await page.tap(".library-cloud");
+	assert.deepStrictEqual(await cloudNames(), []);
+	assert.ok(/No cloud accounts with documents/.test(await text(".cloud-status")));
+});
+
+t.test("cloud: Save a Copy of a downloaded workbook uploads it into the folder it came from", async function() {
+	await open(scenario({cloud: true, service: true}));
+	await cloudWorkFolder();
+	await tapCloud("Budget.xlsx");
+	assert.strictEqual(await waitOpened(), "xlsx");
+	await page.waitFor("documentsApp.$.viewer.$.sheet.$.editButton.showing");
+	await page.eval("var s=documentsApp.$.viewer.$.sheet; s.$.grid.select(1,0); s.startEdit(); s.$.editor.setValue('Fountain pen'); s.commitEdit(); 1");
+	await page.waitFor("documentsApp.$.viewer.$.saveButton.showing");
+	await page.tap(".viewer-save");
+	await page.waitFor("documentsApp.$.saveDialog.isOpen");
+	assert.strictEqual(await page.eval("documentsApp.$.saveName.getValue()"), "Budget (edited).xlsx");
+	assert.ok(/same folder in Dropbox/.test(await page.eval("documentsApp.$.saveNote.content")));
+	// A name the folder has: nothing is written or uploaded over it
+	await page.eval("documentsApp.$.saveName.setValue('budget (OLD).xlsx'); documentsApp.doSave(); 1");
+	await page.waitFor("documentsApp.$.saveError.showing");
+	assert.strictEqual(await page.eval("documentsApp.$.saveError.content"), "A file with that name already exists.");
+	assert.strictEqual((await calls("luna", "service/writeNew")).length, 0);
+	// The connector refuses: said, and the dialog stays
+	await page.eval("__MOCK__.set('luna', 'luna://com.palm.service.dropbox/uploadFile', {error: {errorCode: 'NO_STORED_CREDENTIALS'}}); 1");
+	await page.eval("documentsApp.$.saveName.setValue('Budget (edited).xlsx'); documentsApp.doSave(); 1");
+	await page.waitFor("documentsApp.$.saveError.showing && /uploaded/.test(documentsApp.$.saveError.content)");
+	assert.strictEqual(await page.eval("documentsApp.$.saveError.content"),
+		"The copy could not be uploaded. Sign in to this account again in Accounts.");
+	assert.ok(await page.eval("documentsApp.$.saveDialog.isOpen"));
+	// And then it takes it
+	await page.eval("__MOCK__.set('luna', 'luna://com.palm.service.dropbox/uploadFile', {json: {id: 'id:new'}}); documentsApp.doSave(); 1");
+	await page.waitFor("!documentsApp.$.saveDialog.isOpen", 10000);
+	var w = await calls("luna", "service/writeNew");
+	var u = await calls("luna", "dropbox/uploadFile");
+	assert.strictEqual(w.length, 2);
+	assert.strictEqual(u.length, 2);
+	var dir = path.posix.dirname(Cloud.cachePath(CLOUD.dropbox, CLOUD.budget));
+	assert.ok(w[1].params.path.indexOf(dir + "/copy-") === 0 && /-Budget \(edited\)\.xlsx$/.test(w[1].params.path), w[1].params.path);
+	assert.notStrictEqual(w[0].params.path, w[1].params.path, "each try writes a copy of its own");
+	assert.deepStrictEqual(u[1].params, {accountId: "acc1", path: "/Work", localPath: w[1].params.path, name: "Budget (edited).xlsx",
+		mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+	assert.strictEqual(u[1].acg, "granted");
+	var wb = XLSX.read(Buffer.from(w[1].params.data, "base64"), {type: "buffer"});
+	assert.strictEqual(wb.Sheets.Prices.A2.v, "Fountain pen");
+	// The folder was looked at before each upload, for the name
+	assert.deepStrictEqual((await calls("luna", "dropbox/listFolder")).slice(-3).map(function(c) {
+		return c.params.path;
+	}), ["/Work", "/Work", "/Work"]);
+	assert.strictEqual(await page.eval("documentsApp.$.toaster.content"), "Saved as Budget (edited).xlsx in Dropbox \u00b7 Work");
+});
+
 // --- Layouts ------------------------------------------------------------------------
 
 [["tablet", 1024, 768], ["phone", 480, 800], ["square", 450, 380]].forEach(function(inSize) {
 	t.test("layout " + inSize[0] + " " + inSize[1] + "x" + inSize[2] + ": nothing wider than the screen, tools fit", async function() {
 		// With the service, so the edit tool is in the toolbar too.
-		await open(scenario({service: true}), {width: inSize[1], height: inSize[2]});
+		await open(scenario({service: true, cloud: true}), {width: inSize[1], height: inSize[2]});
 		await libraryNames();
-		var lib = await page.eval("({doc: document.documentElement.scrollWidth, toolbar: document.querySelector('.library-toolbar').scrollWidth})");
-		assert.ok(lib.doc <= inSize[1] && lib.toolbar <= inSize[1], JSON.stringify(lib));
+		var lib = await page.eval("({doc: document.documentElement.scrollWidth, toolbar: document.querySelector('.library-toolbar').scrollWidth, " +
+			"cloud: document.querySelector('.library-cloud').getBoundingClientRect().right})");
+		assert.ok(lib.doc <= inSize[1] && lib.toolbar <= inSize[1] && lib.cloud <= inSize[1], JSON.stringify(lib));
 		// Each filter's caption fits inside its button (the theme's 16px ends take room from the width).
-		var clipped = await page.eval("Array.prototype.filter.call(document.querySelectorAll('.library-filters .enyo-grouped-toolbutton'), " +
-			"function(b){var r=document.createRange();r.selectNodeContents(b);var t=r.getBoundingClientRect().width;" +
-			"var cs=getComputedStyle(b);var inner=b.getBoundingClientRect().width-parseFloat(cs.borderLeftWidth)-parseFloat(cs.borderRightWidth);" +
-			"return t>inner+0.5;}).map(function(b){return b.textContent;})");
-		assert.deepStrictEqual(clipped, [], "filter captions fit");
+		var clipped = function(inView) {
+			return page.eval("Array.prototype.filter.call(document.querySelectorAll('" + inView + " .library-filters .enyo-grouped-toolbutton'), " +
+				"function(b){var r=document.createRange();r.selectNodeContents(b);var t=r.getBoundingClientRect().width;" +
+				"var cs=getComputedStyle(b);var inner=b.getBoundingClientRect().width-parseFloat(cs.borderLeftWidth)-parseFloat(cs.borderRightWidth);" +
+				"return t>inner+0.5;}).map(function(b){return b.textContent;})");
+		};
+		assert.deepStrictEqual(await clipped(".library"), [], "filter captions fit");
+		// The cloud view's toolbar has its back key where the library has Cloud
+		await page.eval("documentsApp.showCloud(); 1");
+		await page.waitFor("!documentsApp.$.cloud.loading");
+		var cloud = await page.eval("({doc: document.documentElement.scrollWidth, toolbar: document.querySelector('.cloud-toolbar').scrollWidth, " +
+			"last: document.querySelector('.cloud-toolbar .library-refresh').getBoundingClientRect().right})");
+		assert.ok(cloud.doc <= inSize[1] && cloud.toolbar <= inSize[1] && cloud.last <= inSize[1], JSON.stringify(cloud));
+		assert.deepStrictEqual(await clipped(".cloud"), [], "the cloud view's filter captions fit");
+		await page.eval("documentsApp.showLibrary(); 1");
 		await openDoc("/media/internal/sample.odt");
 		await page.waitFor("documentsApp.$.viewer.$.editButton.showing");
 		var reflow = await page.eval("documentsApp.$.viewer.reflow");
