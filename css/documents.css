@@ -189,6 +189,88 @@
 	}
 }
 
+/* --- Cloud --------------------------------------------------------- */
+
+.cloud {
+	height: 100%;
+}
+
+.cloud-appicon {
+	width: 32px;
+	height: 32px;
+	margin-right: 8px;
+	border-radius: 6px;
+	background: #4a7fb5 url(../images/cloud.svg) center / 24px 24px no-repeat;
+}
+
+.cloud-titlebox {
+	min-width: 0;
+}
+
+.cloud-subtitle {
+	font-size: 13px;
+	color: #666;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* The download's spinner lies over the list. */
+.cloud-body {
+	position: relative;
+}
+
+.cloud-scroller {
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: 0;
+	bottom: 0;
+}
+
+.cloud-busy {
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: 0;
+	bottom: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	background: rgba(233, 233, 233, 0.9);
+	color: #444;
+	z-index: 2;
+}
+
+.cloud-busy-text {
+	margin-top: 12px;
+	font-size: 16px;
+	max-width: 480px;
+}
+
+.cloud-error {
+	color: #a24c44;
+}
+
+.cloud-retry {
+	display: inline-block;
+	min-width: 140px;
+	margin-top: 16px;
+}
+
+.cloud-icon-account {
+	background: #4a7fb5 url(../images/cloud.svg) center / 22px 22px no-repeat;
+}
+
+.cloud-icon-folder {
+	background: #c9a54a;
+	border-radius: 3px 8px 3px 3px;
+	height: 30px;
+	margin-top: 5px;
+	margin-bottom: 5px;
+}
+
 /* --- Viewer -------------------------------------------------------- */
 
 .viewer {
@@ -1028,6 +1110,20 @@ mark.find-current {
 .night .viewer-status {
 	background: #1b1b1b;
 	color: #ddd;
+}
+
+.night .cloud {
+	background: #1b1b1b;
+	color: #ddd;
+}
+
+.night .cloud-busy {
+	background: rgba(27, 27, 27, 0.9);
+	color: #ddd;
+}
+
+.night .cloud-subtitle {
+	color: #999;
 }
 
 .night .library-header,

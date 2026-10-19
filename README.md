@@ -87,6 +87,30 @@ Features
   app for every kind it reads; `{"target": "file:///media/internal/..."}`
   (or a plain path) opens that document, also in an app already open.
 
+### Cloud
+
+- **Cloud** (the cloud key in the library's toolbar): the documents in
+  online accounts set up in Accounts with luneos-synergy-connectors
+  (Dropbox, Box, Google Drive, OneDrive, pCloud, ...). Accounts first,
+  then the folders of one; folders and the documents the app opens are
+  listed, filtered by kind as in the library. Back (the toolbar's arrow
+  or the gesture) goes up a folder, to the accounts, then the library.
+- The accounts come from `com.palm.service.accounts/listAccounts`
+  (`{"capability": "DOCUMENTS"}`, group `accountsservice.operation` in
+  appinfo.json). Each account's DOCUMENTS provider names its connector
+  (`palm://com.palm.service.dropbox/`), which the app calls for
+  `listFolder`, `downloadFile` and `uploadFile`; the connectors' own
+  `perm.json` give this app their groups.
+- A tapped document is downloaded into
+  `/media/internal/.documents/cloud/<account>/<entry>/<its name>` (a
+  hidden folder, so the library does not list it) and opened from
+  there. It is listed with the recent documents as from that cloud, and
+  opens from the downloaded copy.
+- **Save a Copy** of a downloaded document writes the copy next to the
+  download, then uploads it as a new file into the cloud folder it came
+  from. A name the folder already has is refused first, since the
+  connectors would replace that file.
+
 ### Reading
 
 - **Text documents** as pages on a tablet, reflowed to the screen on a
@@ -108,7 +132,8 @@ Features
 - **Links:** a tap asks first, then opens the browser. Links inside the
   document go to their place.
 - The back gesture closes what is open first (a dialog, find, editing a
-  cell), then goes back to the library.
+  cell), then goes back to the library (or the cloud folder the document
+  was opened from).
 
 ### Editing
 
@@ -291,9 +316,10 @@ Code
   `Library.js` (the scan, launch targets, names).
 - `source/views/` - `DocRender.js` (model to DOM), `Finder.js`,
   `SheetGrid.js`, `SheetView.js`, `DocxEditor.js` (SuperDoc),
-  `ViewerView.js`, `LibraryView.js`.
+  `ViewerView.js`, `LibraryView.js`, `CloudView.js`.
 - `source/services/` - `DocLoader.js` (file reads, the worker),
-  `FileService.js` (luna).
+  `FileService.js` (luna), `CloudService.js` (cloud accounts and their
+  connectors).
 - `lib/` - third-party, as bundled:
 
 | Library | Version | Licence | Used for |
@@ -317,8 +343,9 @@ Tests
 
 - `tools/tests/unit-tests.js`: the readers against fixture documents,
   the helpers, the streaming parsers fed a few characters at a time,
-  and the service's writer (it never replaces a file, refuses paths
-  outside /media/internal). Node only.
+  the cloud's accounts, requests, cache paths and messages, and the
+  service's writer (it never replaces a file, refuses paths outside
+  /media/internal and hidden ones but the cloud cache). Node only.
 - `tools/tests/edit-tests.js`: editing: the parser's offsets, edited
   cells in .xlsx and .ods XML (repeated rows and cells split, shared
   formulas written out, new results), formulas worked out again, ODF
@@ -331,8 +358,9 @@ Tests
   the files mocked: the library, launch and relaunch targets, every
   format, find, zoom, night reading, links, the grid with 20 000 rows,
   editing (cells with their formulas' results, an .odt paragraph, a
-  text file, a .docx in SuperDoc) and saving a copy, and the three
-  screen sizes. Every test
+  text file, a .docx in SuperDoc) and saving a copy, the cloud (accounts,
+  folders, a download opened, back, errors, a copy uploaded) and the
+  three screen sizes. Every test
   also fails on a page error or an unmocked or refused call.
 - `tools/tests/device-tests.js`: on a device, through WAM's DevTools
   port: every fixture, the large documents, find, layout, and opening as

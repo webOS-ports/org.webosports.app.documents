@@ -11,7 +11,8 @@ enyo.kind({
 	className: "library",
 	events: {
 		onOpenDocument: "",
-		onRefresh: ""
+		onRefresh: "",
+		onCloud: ""
 	},
 	filters: {all: null, text: "text", sheet: "sheet", slides: "slides"},
 	components: [
@@ -32,7 +33,8 @@ enyo.kind({
 				{caption: $L("Sheets"), value: "sheet"},
 				{caption: $L("Slides"), value: "slides"}
 			]},
-			{name: "refreshButton", kind: "ToolButton", className: "library-refresh", icon: "images/refresh.svg", onclick: "doRefresh"}
+			{name: "refreshButton", kind: "ToolButton", className: "library-refresh", icon: "images/refresh.svg", onclick: "doRefresh"},
+			{name: "cloudButton", kind: "ToolButton", className: "library-cloud", icon: "images/cloud.svg", onclick: "doCloud"}
 		]}
 	],
 
@@ -100,6 +102,10 @@ enyo.kind({
 			var family = FileTypes.kinds[inDoc.kind] ? FileTypes.familyOf(inDoc.kind) : "text";
 			var folder = String(inDoc.dir || DocLibrary.dirName(inDoc.path)).replace(/^\/media\/internal\/?/, "");
 			var sub = inRecent && inDoc.opened ? self.when(inDoc.opened) : (folder || $L("USB storage"));
+			// A downloaded one says which cloud it is from
+			if (inDoc.cloud && inDoc.cloud.account) {
+				sub = inDoc.cloud.account.provider + " \u00b7 " + sub;
+			}
 			html.push("<div class=\"library-item\" data-row=\"" + (rows.length - 1) + "\">" +
 				"<div class=\"library-icon library-icon-" + (family || inDoc.kind) + "\"><span>" + esc(FileTypes.extensionOf(inDoc.name).slice(0, 4)) + "</span></div>" +
 				"<div class=\"library-text\"><div class=\"library-name\">" + esc(inDoc.name) + "</div>" +

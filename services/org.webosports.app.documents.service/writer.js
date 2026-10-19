@@ -6,18 +6,25 @@
 	never replaces or changes a file that exists: the file is opened with
 	O_CREAT|O_EXCL ("wx"), so an existing name fails with EEXIST. Only
 	paths under root (/media/internal/ on a device) with the extension of a
-	format the app writes are accepted.
+	format the app writes are accepted, and no hidden file or folder but
+	the app's cloud cache (.documents/cloud/), where the copy of a
+	downloaded document is written before it is uploaded.
 */
 var fs = require("fs");
 
 var MAX_BYTES = 64 * 1024 * 1024;
 
+//* Below root: the one hidden folder copies are written to (source/services/CloudService.js).
+var CLOUD_CACHE = ".documents/cloud/";
+
 //* The path if it may be written, else null.
 function checkPath(inRoot, inPath) {
 	var p = String(inPath || "");
 	var rest = p.slice(inRoot.length);
-	if (p.indexOf(inRoot) !== 0 || !rest || p.indexOf("\u0000") >= 0 || /(^|\/)\.\.?(\/|$)/.test(rest) ||
-			/(^|\/)\./.test(rest) || !/\.(xlsx|ods|csv|odt|docx|txt|md|pptx|odp)$/i.test(p)) {
+	// Below the cloud cache, the rest of the path is held to the same rules
+	var below = rest.indexOf(CLOUD_CACHE) === 0 ? rest.slice(CLOUD_CACHE.length) : rest;
+	if (p.indexOf(inRoot) !== 0 || !below || p.indexOf("\u0000") >= 0 || /(^|\/)\.\.?(\/|$)/.test(rest) ||
+			/(^|\/)\./.test(below) || !/\.(xlsx|ods|csv|odt|docx|txt|md|pptx|odp)$/i.test(p)) {
 		return null;
 	}
 	return p;

@@ -26,6 +26,11 @@ var Stream = require(path.join(ROOT, "source/core/SheetStream.js"));
 var Library = require(path.join(ROOT, "source/core/Library.js"));
 var Engine = require(path.join(ROOT, "source/core/Engine.js"));
 var writer = require(path.join(ROOT, "services/org.webosports.app.documents.service/writer.js"));
+// The cloud's messages are localised with Enyo's $L in the app; here they are the English text.
+global.$L = function(inText) {
+	return inText;
+};
+var Cloud = require(path.join(ROOT, "source/services/CloudService.js"));
 
 function bytes(inName) {
 	var b = fs.readFileSync(path.join(FIX, inName));
@@ -677,6 +682,189 @@ t.test("library: launch targets, URLs and copy names", function() {
 	assert.strictEqual(Library.formatSize(1536), "1.5 KB");
 });
 
+// --- Cloud ------------------------------------------------------------------------
+
+//* What listAccounts answers for a few accounts (only some have documents through a connector).
+var cloudAccounts = [
+	{_id: "b2", alias: "", username: "work@example.com", loc_name: "Box", capabilityProviders: [
+		{capability: "DOCUMENTS", implementation: "palm://com.palm.service.boxnet"}]},
+	{_id: "d1", alias: "Herrie", username: "h@example.com", loc_name: "Dropbox", capabilityProviders: [
+		{capability: "PHOTO.UPLOAD", implementation: "palm://com.palm.service.photos"},
+		{capability: "DOCUMENTS", implementation: "palm://com.palm.service.dropbox/"}]},
+	{_id: "p3", username: "only-photos", loc_name: "Flickr", capabilityProviders: [
+		{capability: "PHOTO.UPLOAD", implementation: "palm://com.palm.service.flickr/"}]},
+	{_id: "x4", username: "odd", loc_name: "Odd", capabilityProviders: [
+		{capability: "DOCUMENTS", implementation: "palm://com.palm.service.odd/listFolder"}]},
+	{_id: "x5", username: "web", loc_name: "Web", capabilityProviders: [
+		{capability: "DOCUMENTS", implementation: "https://example.com/"}]},
+	{username: "no id", loc_name: "None", capabilityProviders: [
+		{capability: "DOCUMENTS", implementation: "palm://com.palm.service.none/"}]}
+];
+
+//* Replaces the bus for one test: inAnswer(uri, params) is the reply ({returnValue: false, ...} fails).
+function fakeBus(inAnswer) {
+	var sent = [];
+	Cloud.call = function(inUri, inParams, inCallback) {
+		sent.push({uri: inUri, params: inParams});
+		var r = inAnswer(inUri, inParams);
+		if (r.returnValue === false) {
+			var e = new Error(r.errorText || ("Failed: " + inUri));
+			e.code = r.errorCode;
+			inCallback(e, r);
+		} else {
+			inCallback(null, r);
+		}
+	};
+	return sent;
+}
+
+function callback() {
+	var out = {};
+	out.fn = function(inErr, inValue) {
+		out.err = inErr;
+		out.value = inValue;
+	};
+	return out;
+}
+
+t.test("cloud: only accounts whose documents go through a connector service, sorted", function() {
+	var sent = fakeBus(function() {
+		return {returnValue: true, results: cloudAccounts};
+	});
+	var cb = callback();
+	Cloud.accounts(cb.fn);
+	assert.deepStrictEqual(sent, [{uri: "luna://com.palm.service.accounts/listAccounts", params: {capability: "DOCUMENTS"}}]);
+	assert.deepStrictEqual(cb.value, [
+		{id: "b2", provider: "Box", name: "work@example.com", service: "com.palm.service.boxnet"},
+		{id: "d1", provider: "Dropbox", name: "Herrie", service: "com.palm.service.dropbox"}
+	]);
+	assert.strictEqual(Cloud.serviceOf("palm://com.palm.service.dropbox/"), "com.palm.service.dropbox");
+	assert.strictEqual(Cloud.serviceOf("palm://a/b"), null);
+	assert.strictEqual(Cloud.serviceOf("luna://com.palm.service.dropbox/"), null);
+	assert.strictEqual(Cloud.serviceOf("palm://bad name/"), null);
+});
+
+t.test("cloud: account and provider names without the spaces around them", function() {
+	fakeBus(function() {
+		return {returnValue: true, results: [{_id: "m1", loc_name: " MEGA ", alias: "Gerardus ",
+			capabilityProviders: [{capability: "DOCUMENTS", implementation: "palm://com.palm.service.mega/"}]}]};
+	});
+	var cb = callback();
+	Cloud.accounts(cb.fn);
+	assert.deepStrictEqual(cb.value, [{id: "m1", provider: "MEGA", name: "Gerardus", service: "com.palm.service.mega"}]);
+});
+
+t.test("cloud: listing a folder, its top one without a path; folders first, then the documents the app opens", function() {
+	var account = {id: "d1", provider: "Dropbox", name: "Herrie", service: "com.palm.service.dropbox"};
+	var sent = fakeBus(function() {
+		return {returnValue: true, entries: [
+			{id: "1", type: "file", name: "song.mp3", path: "/song.mp3"},
+			{id: "2", type: "file", name: "b.xlsx", path: "/b.xlsx"},
+			{id: "3", type: "folder", name: "Work", path: "/Work"},
+			{id: "4", type: "file", name: "A.odt", path: "/A.odt"},
+			{id: "5", type: "folder", name: "archive", path: "/archive"},
+			{id: "6", type: "file", name: "Manual.pdf", path: "/Manual.pdf"},
+			{id: "7", type: "link", name: "odd", path: "/odd"}
+		]};
+	});
+	var cb = callback();
+	Cloud.list(account, null, cb.fn);
+	Cloud.list(account, "id:abc", callback().fn);
+	assert.deepStrictEqual(sent.map(function(s) {
+		return [s.uri, s.params];
+	}), [["luna://com.palm.service.dropbox/listFolder", {accountId: "d1"}],
+		["luna://com.palm.service.dropbox/listFolder", {accountId: "d1", path: "id:abc"}]]);
+	assert.deepStrictEqual(cb.value.map(function(e) {
+		return e.name;
+	}), ["archive", "Work", "A.odt", "b.xlsx", "Manual.pdf", "song.mp3"]);
+	assert.deepStrictEqual(Cloud.visibleEntries(cb.value).map(function(e) {
+		return e.name;
+	}), ["archive", "Work", "A.odt", "b.xlsx", "Manual.pdf"]);
+	assert.ok(Cloud.hasName(cb.value, "SONG.mp3"));
+	assert.ok(!Cloud.hasName(cb.value, "song.mp4"));
+});
+
+t.test("cloud: downloads go to a hidden folder per account and entry, under the file's own name", function() {
+	var account = {id: "d1", service: "com.palm.service.dropbox"};
+	var p1 = Cloud.cachePath(account, {id: "id:1", path: "/Work/Plan.odt", name: "Plan.odt"});
+	var p2 = Cloud.cachePath(account, {id: "id:2", path: "/Old/Plan.odt", name: "Plan.odt"});
+	assert.ok(/^\/media\/internal\/\.documents\/cloud\/d1\/[0-9a-f]{8}\/Plan\.odt$/.test(p1), p1);
+	assert.notStrictEqual(p1, p2, "two files of one name are kept apart");
+	assert.strictEqual(p1, Cloud.cachePath(account, {id: "id:1", path: "/Work/Plan.odt", name: "Plan.odt"}), "the same entry, the same file");
+	assert.strictEqual(FileTypes.kindFromName(p1), "odt");
+	// Names that would climb out, hide or carry a folder become plain names; odd account ids too.
+	var odd = Cloud.cachePath({id: "../x/y"}, {id: "z", name: "../../etc/a b.docx"});
+	assert.ok(/^\/media\/internal\/\.documents\/cloud\/__x_y\/[0-9a-f]{8}\/_\.\._etc_a b\.docx$/.test(odd), odd);
+	assert.strictEqual(Cloud.fileName(".bashrc.txt"), "bashrc.txt");
+	assert.strictEqual(Cloud.fileName(""), "document");
+	assert.strictEqual(Cloud.copyPath(p1, "Plan (edited).odt", 36), p1.replace(/Plan\.odt$/, "copy-10-Plan (edited).odt"));
+	// The service writes copies there, and nowhere else hidden
+	assert.ok(writer.checkPath("/media/internal/", Cloud.copyPath(p1, "Plan (edited).odt")));
+
+	var sent = fakeBus(function() {
+		return {returnValue: true, path: "whatever"};
+	});
+	var cb = callback();
+	Cloud.download(account, {id: "id:1", path: "/Work/Plan.odt", name: "Plan.odt"}, cb.fn);
+	assert.deepStrictEqual(sent, [{uri: "luna://com.palm.service.dropbox/downloadFile",
+		params: {accountId: "d1", path: "/Work/Plan.odt", localPath: p1}}]);
+	assert.strictEqual(cb.value, p1);
+});
+
+t.test("cloud: an upload is a new file in the folder, with its type", function() {
+	var account = {id: "b2", service: "com.palm.service.boxnet"};
+	var sent = fakeBus(function() {
+		return {returnValue: true, id: "99", name: "x"};
+	});
+	Cloud.upload(account, "12345", "/media/internal/.documents/cloud/b2/0/copy-1-Budget (edited).xlsx", "Budget (edited).xlsx", callback().fn);
+	Cloud.upload(account, null, "/l/n.txt", "n.txt", callback().fn);
+	assert.deepStrictEqual(sent, [
+		{uri: "luna://com.palm.service.boxnet/uploadFile", params: {accountId: "b2", path: "12345",
+			localPath: "/media/internal/.documents/cloud/b2/0/copy-1-Budget (edited).xlsx", name: "Budget (edited).xlsx",
+			mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}},
+		{uri: "luna://com.palm.service.boxnet/uploadFile", params: {accountId: "b2", localPath: "/l/n.txt", name: "n.txt",
+			mimeType: "text/plain"}}
+	]);
+	fakeBus(function() {
+		return {returnValue: false, errorCode: "NOT_SUPPORTED", detail: "read only"};
+	});
+	var cb = callback();
+	Cloud.upload(account, null, "/l/n.txt", "n.txt", cb.fn);
+	assert.strictEqual(cb.err.code, "NOT_SUPPORTED");
+});
+
+t.test("cloud: errors in a short sentence", function() {
+	var err = function(inCode, inText) {
+		var e = new Error(inText || "Failed: luna://x/y");
+		e.code = inCode;
+		return e;
+	};
+	assert.strictEqual(Cloud.describeError(err("PERMISSION_DENIED", "caller 'x' is not permitted")),
+		"This account's service does not let Documents use it.");
+	["NO_CREDENTIALS", "NO_STORED_CREDENTIALS", "401_UNAUTHORIZED", "OAUTH_TOKEN_FAILED"].forEach(function(c) {
+		assert.strictEqual(Cloud.describeError(err(c)), "Sign in to this account again in Accounts.", c);
+	});
+	assert.strictEqual(Cloud.describeError(err("DROPBOX_API_ERROR", "HTTP 401")), "Sign in to this account again in Accounts.");
+	assert.strictEqual(Cloud.describeError(err("NOT_SUPPORTED")), "This account cannot do that.");
+	assert.strictEqual(Cloud.describeError(err(-1, "Denied method call \"listFolder\" for category \"/\"")),
+		"The service for this account is not installed.");
+	assert.strictEqual(Cloud.describeError(err(-1, "Service does not exist: com.palm.service.boxnet.")),
+		"The service for this account is not installed.");
+	assert.strictEqual(Cloud.describeError(err("CURL_FAILED")), "The cloud could not be reached. Check the connection and try again.");
+	assert.strictEqual(Cloud.describeError(err("MEGA_NODE_NOT_FOUND")), "The cloud service reported a problem. (MEGA_NODE_NOT_FOUND)");
+	assert.strictEqual(Cloud.describeError(null), "The cloud service reported a problem.");
+});
+
+t.test("cloud: a kept origin is used again only when it names an account and a service", function() {
+	var a = {id: "d1", provider: "Dropbox", service: "com.palm.service.dropbox"};
+	assert.ok(Cloud.isOrigin({account: a, folderPath: "/Work"}));
+	assert.ok(Cloud.isOrigin({account: a, folderPath: null}));
+	assert.ok(!Cloud.isOrigin({account: {id: "d1", service: "evil/x"}, folderPath: "/"}));
+	assert.ok(!Cloud.isOrigin({account: {id: 1, service: "a"}}));
+	assert.ok(!Cloud.isOrigin({account: a, folderPath: 5}));
+	assert.ok(!Cloud.isOrigin(null));
+});
+
 // --- Engine ------------------------------------------------------------------------
 
 function engine(inLibs) {
@@ -789,6 +977,17 @@ t.test("service: writes copies of every format the app edits", function() {
 		assert.strictEqual(r.returnValue, true, n);
 	});
 	assert.strictEqual(writer.writeNew(tmpRoot, tmpRoot + "c.html", Buffer.from("x").toString("base64")).errorCode, "EINVAL");
+});
+
+t.test("service: writes into the cloud cache's folders, and into no other hidden one", function() {
+	var data = Buffer.from("x").toString("base64");
+	fs.mkdirSync(tmpRoot + ".documents/cloud/d1/0a1b2c3d", {recursive: true});
+	var r = writer.writeNew(tmpRoot, tmpRoot + ".documents/cloud/d1/0a1b2c3d/copy-1-Plan (edited).odt", data);
+	assert.strictEqual(r.returnValue, true, JSON.stringify(r));
+	[".documents/cloud/", ".documents/cloud/d1/.x/a.odt", ".documents/cloud/../../a.odt", ".documents/cloud/d1/../.ssh/a.odt",
+		".documents/other/a.odt", ".documents/a.odt", "x/.documents/cloud/a.odt", ".documents/cloud/d1/a.sh"].forEach(function(p) {
+		assert.strictEqual(writer.writeNew(tmpRoot, tmpRoot + p, data).errorCode, "EINVAL", p);
+	});
 });
 
 t.test("service: a missing folder fails cleanly and leaves nothing behind", function() {

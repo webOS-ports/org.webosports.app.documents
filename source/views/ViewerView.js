@@ -119,7 +119,8 @@ enyo.kind({
 
 	// --- Opening ---------------------------------------------------------
 
-	openPath: function(inPath) {
+	//* inPlace (optional) says where the file is from, under its name: "Dropbox · Work" for a downloaded one.
+	openPath: function(inPath, inPlace) {
 		var token = ++this.loadToken;
 		var self = this;
 		var t0 = this.openStarted = Date.now();
@@ -131,7 +132,9 @@ enyo.kind({
 		this.fileName = DocLibrary.baseName(inPath);
 		this.convertedFrom = null;
 		this.$.title.setContent(enyo.string.escapeHtml(this.fileName));
-		this.$.subtitle.setContent(enyo.string.escapeHtml(DocLibrary.dirName(inPath).replace(/^\/media\/internal/, $L("USB storage"))));
+		this.place = inPlace || DocLibrary.dirName(inPath).replace(/^\/media\/internal/, $L("USB storage"));
+		this.fromCloud = !!inPlace;
+		this.$.subtitle.setContent(enyo.string.escapeHtml(this.place));
 		this.showStatus($L("Opening\u2026"), true);
 		DocLoader.read(inPath, function(inErr, inBuffer) {
 			if (token !== self.loadToken) {
@@ -546,6 +549,10 @@ enyo.kind({
 			parts.push(s === 1 ? $L("1 sheet") : $L("#{n} sheets").replace("#{n}", s));
 		}
 		parts.push(DocLibrary.formatSize(this.size));
+		// A downloaded document says where it is from
+		if (this.fromCloud) {
+			parts.push(this.place);
+		}
 		return parts.join(" \u00b7 ");
 	},
 
@@ -959,7 +966,7 @@ enyo.kind({
 		var meta = d.meta || {};
 		var groups = [
 			[$L("File"), [
-				[$L("Folder"), DocLibrary.dirName(this.path).replace(/^\/media\/internal/, $L("USB storage"))],
+				[$L("Folder"), this.place],
 				[$L("Size"), DocLibrary.formatSize(this.size)],
 				[$L("Opened in"), this.timings.total ? this.timings.total + " ms" : ""]
 			]],
