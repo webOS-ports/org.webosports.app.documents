@@ -252,17 +252,21 @@ enyo.kind({
 		var self = this;
 		var rows = [];
 		var html = [];
-		var add = function(inRow, inIcon, inLabel, inName, inSub) {
+		var add = function(inRow, inIcon, inLabel, inName, inSub, inPicture) {
 			rows.push(inRow);
+			// A picture's URL sits in style="...": single quotes, and nothing in the path may end it.
+			var style = inPicture ? " style=\"background-image: url('file://" + encodeURI(inPicture)
+				.replace(/'/g, "%27").replace(/\(/g, "%28").replace(/\)/g, "%29").replace(/"/g, "%22") + "')\"" : "";
 			html.push("<div class=\"library-item cloud-item\" data-row=\"" + (rows.length - 1) + "\">" +
-				"<div class=\"library-icon " + inIcon + "\"><span>" + esc(inLabel) + "</span></div>" +
+				"<div class=\"library-icon " + inIcon + "\"" + style + "><span>" + esc(inLabel) + "</span></div>" +
 				"<div class=\"library-text\"><div class=\"library-name\">" + esc(inName) + "</div>" +
 				"<div class=\"library-sub\">" + esc(inSub) + "</div></div></div>");
 		};
 		var empty = "";
 		if (!this.account) {
 			(this.accounts || []).forEach(function(a) {
-				add({account: a}, "cloud-icon-account", "", a.provider, a.name);
+				// The provider's own picture, as in Accounts; the cloud where the template has none.
+				add({account: a}, a.icon ? "cloud-icon-provider" : "cloud-icon-account", "", a.provider, a.name, a.icon);
 			});
 			empty = "<p>" + esc($L("No cloud accounts with documents.")) + "</p><p class=\"library-hint\">" +
 				esc($L("Add a Dropbox, Box, Google Drive, OneDrive or other online storage account in Accounts, " +

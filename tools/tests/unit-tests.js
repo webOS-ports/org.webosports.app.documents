@@ -688,7 +688,9 @@ t.test("library: launch targets, URLs and copy names", function() {
 var cloudAccounts = [
 	{_id: "b2", alias: "", username: "work@example.com", loc_name: "Box", capabilityProviders: [
 		{capability: "DOCUMENTS", implementation: "palm://com.palm.service.boxnet"}]},
-	{_id: "d1", alias: "Herrie", username: "h@example.com", loc_name: "Dropbox", capabilityProviders: [
+	{_id: "d1", alias: "Herrie", username: "h@example.com", loc_name: "Dropbox",
+		icon: {loc_32x32: "/usr/palm/public/accounts/com.palm.dropbox/images/dropbox-32x32.png",
+			loc_48x48: "/usr/palm/public/accounts/com.palm.dropbox/images/dropbox-48x48.png"}, capabilityProviders: [
 		{capability: "PHOTO.UPLOAD", implementation: "palm://com.palm.service.photos"},
 		{capability: "DOCUMENTS", implementation: "palm://com.palm.service.dropbox/"}]},
 	{_id: "p3", username: "only-photos", loc_name: "Flickr", capabilityProviders: [
@@ -735,8 +737,9 @@ t.test("cloud: only accounts whose documents go through a connector service, sor
 	Cloud.accounts(cb.fn);
 	assert.deepStrictEqual(sent, [{uri: "luna://com.palm.service.accounts/listAccounts", params: {capability: "DOCUMENTS"}}]);
 	assert.deepStrictEqual(cb.value, [
-		{id: "b2", provider: "Box", name: "work@example.com", service: "com.palm.service.boxnet"},
-		{id: "d1", provider: "Dropbox", name: "Herrie", service: "com.palm.service.dropbox"}
+		{id: "b2", provider: "Box", name: "work@example.com", service: "com.palm.service.boxnet", icon: ""},
+		{id: "d1", provider: "Dropbox", name: "Herrie", service: "com.palm.service.dropbox",
+			icon: "/usr/palm/public/accounts/com.palm.dropbox/images/dropbox-48x48.png"}
 	]);
 	assert.strictEqual(Cloud.serviceOf("palm://com.palm.service.dropbox/"), "com.palm.service.dropbox");
 	assert.strictEqual(Cloud.serviceOf("palm://a/b"), null);
@@ -751,7 +754,7 @@ t.test("cloud: account and provider names without the spaces around them", funct
 	});
 	var cb = callback();
 	Cloud.accounts(cb.fn);
-	assert.deepStrictEqual(cb.value, [{id: "m1", provider: "MEGA", name: "Gerardus", service: "com.palm.service.mega"}]);
+	assert.deepStrictEqual(cb.value, [{id: "m1", provider: "MEGA", name: "Gerardus", service: "com.palm.service.mega", icon: ""}]);
 });
 
 t.test("cloud: listing a folder, its top one without a path; folders first, then the documents the app opens", function() {

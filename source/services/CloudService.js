@@ -55,9 +55,12 @@
 				}
 			});
 			if (service) {
-				// An alias can come with spaces around it ("Gerardus ").
+				// An alias can come with spaces around it ("Gerardus "). icon: the account template's
+				// picture of the provider, as the Accounts app shows it, or "".
+				var icons = a.icon || {};
 				out.push({id: String(a._id), provider: trim(a.loc_name) || String(a.templateId || service),
-					name: trim(a.alias) || trim(a.username), service: service});
+					name: trim(a.alias) || trim(a.username), service: service,
+					icon: trim(icons.loc_48x48 || icons.loc_32x32)});
 			}
 		});
 		out.sort(function(x, y) {

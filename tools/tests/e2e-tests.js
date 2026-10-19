@@ -86,8 +86,12 @@ function cloudLuna() {
 		if (inPhotos) {
 			providers.unshift({capability: "PHOTO.UPLOAD", implementation: "palm://com.palm.service.photos"});
 		}
+		// Dropbox's template has its picture (with a quote in its path, which must not end the
+		// row's style attribute); Box's has none and keeps the cloud.
+		var icon = inPhotos ? {loc_32x32: "/usr/palm/public/accounts/com.palm.dropbox/images/d'b (32).png",
+			loc_48x48: "/usr/palm/public/accounts/com.palm.dropbox/images/d'b (48).png"} : undefined;
 		return {_id: inAccount.id, alias: inAccount.name === "Herrie" ? "Herrie" : "", username: inAccount.name,
-			loc_name: inAccount.provider, capabilityProviders: providers};
+			loc_name: inAccount.provider, icon: icon, capabilityProviders: providers};
 	};
 	return {
 		"luna://com.palm.service.accounts/listAccounts": {cases: [{when: {capability: "DOCUMENTS"}, json: {results: [
@@ -1098,6 +1102,10 @@ t.test("cloud: library, Cloud, an account, a folder; a document is downloaded in
 	await page.tap(".library-cloud");
 	await page.waitFor("documentsApp.$.pane.getViewName() === 'cloud'");
 	assert.deepStrictEqual(await cloudNames(), ["Box", "Dropbox"], "the accounts with documents, not the photos-only one");
+	// Each with its provider's picture from Accounts, the cloud where there is none
+	assert.deepStrictEqual(await page.eval("Array.prototype.map.call(document.querySelectorAll('.cloud .library-icon'), " +
+		"function(e){return e.className.replace(/^library-icon /, '') + ' ' + e.style.backgroundImage;})"),
+		["cloud-icon-account ", "cloud-icon-provider url(\"file:///usr/palm/public/accounts/com.palm.dropbox/images/d%27b%20%2848%29.png\")"]);
 	var accounts = await calls("luna", "accounts/listAccounts");
 	assert.deepStrictEqual(accounts[0].params, {capability: "DOCUMENTS"});
 	assert.strictEqual(accounts[0].acg, "granted", "appinfo.json asks for accountsservice.operation");
