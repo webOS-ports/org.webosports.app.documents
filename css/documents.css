@@ -263,6 +263,13 @@
 	background: #4a7fb5 url(../images/cloud.svg) center / 22px 22px no-repeat;
 }
 
+/* An account's provider picture (style set per row), fitted: not every one is square. */
+.cloud-icon-provider {
+	background: transparent center / 32px 32px no-repeat;
+	background-size: contain;
+	border-radius: 0;
+}
+
 .cloud-icon-folder {
 	background: #c9a54a;
 	border-radius: 3px 8px 3px 3px;
