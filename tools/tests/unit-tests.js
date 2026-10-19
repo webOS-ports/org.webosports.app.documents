@@ -744,6 +744,16 @@ t.test("cloud: only accounts whose documents go through a connector service, sor
 	assert.strictEqual(Cloud.serviceOf("palm://bad name/"), null);
 });
 
+t.test("cloud: account and provider names without the spaces around them", function() {
+	fakeBus(function() {
+		return {returnValue: true, results: [{_id: "m1", loc_name: " MEGA ", alias: "Gerardus ",
+			capabilityProviders: [{capability: "DOCUMENTS", implementation: "palm://com.palm.service.mega/"}]}]};
+	});
+	var cb = callback();
+	Cloud.accounts(cb.fn);
+	assert.deepStrictEqual(cb.value, [{id: "m1", provider: "MEGA", name: "Gerardus", service: "com.palm.service.mega"}]);
+});
+
 t.test("cloud: listing a folder, its top one without a path; folders first, then the documents the app opens", function() {
 	var account = {id: "d1", provider: "Dropbox", name: "Herrie", service: "com.palm.service.dropbox"};
 	var sent = fakeBus(function() {

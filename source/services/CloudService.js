@@ -55,8 +55,9 @@
 				}
 			});
 			if (service) {
-				out.push({id: String(a._id), provider: String(a.loc_name || a.templateId || service),
-					name: String(a.alias || a.username || ""), service: service});
+				// An alias can come with spaces around it ("Gerardus ").
+				out.push({id: String(a._id), provider: trim(a.loc_name) || String(a.templateId || service),
+					name: trim(a.alias) || trim(a.username), service: service});
 			}
 		});
 		out.sort(function(x, y) {
@@ -118,6 +119,10 @@
 	}
 
 	//* Where entry is downloaded to: a folder per account, then one per entry, then the file's own name.
+	function trim(inText) {
+		return String(inText || "").replace(/^\s+|\s+$/g, "");
+	}
+
 	function cachePath(inAccount, inEntry) {
 		return cacheRoot + "/" + folderName(inAccount.id) + "/" + hash((inEntry.id || "") + "\n" + (inEntry.path || "")) +
 			"/" + fileName(inEntry.name);
