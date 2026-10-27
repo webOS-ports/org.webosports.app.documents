@@ -1,4 +1,5 @@
 {
     "allowedNames": ["org.webosports.app.documents.service"],
-    "org.webosports.app.documents.service.group": ["oem"]
+    "org.webosports.app.documents.service.group": ["oem"],
+    "applicationinstall.interface": ["oem"]
 }
