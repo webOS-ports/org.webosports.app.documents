@@ -4,6 +4,11 @@
 		writeNew {"path": "/media/internal/.../Budget (edited).xlsx", "data": "<base64>"}
 			-> {"returnValue": true, "path", "bytes"}
 			-> {"returnValue": false, "errorCode": "EEXIST" | "EINVAL" | ..., "errorText"}
+		list {"dir": "/media/internal/..."}
+			-> {"returnValue": true, "dirs": [names], "files": [names]}
+		size {"path": "/media/internal/..."}
+			-> {"returnValue": true, "size": <bytes>}
+			   the library's scan (files.js), only below /media/internal
 		quit, info   for the installer (it asks a service to quit before an update)
 
 	It talks to the bus through palmbus directly rather than through
@@ -15,6 +20,7 @@
 var palmbus = require("palmbus");
 var path = require("path");
 var writer = require("./writer.js");
+var files = require("./files.js");
 
 // The directory is named after the service (a test build may install it under another id).
 var ID = path.basename(__dirname);
@@ -24,7 +30,9 @@ var IDLE_MS = 30000;
 process.title = ID;
 
 var handle = new palmbus.Handle(ID);
-["writeNew", "quit", "info"].forEach(function(m) {
+var METHODS = ["writeNew", "list", "size", "quit", "info"];
+
+METHODS.forEach(function(m) {
 	handle.registerMethod("/", m);
 });
 
@@ -51,8 +59,14 @@ handle.addListener("request", function(inMessage) {
 	case "writeNew":
 		inMessage.respond(JSON.stringify(writer.writeNew(ROOT, payload.path, payload.data)));
 		break;
+	case "list":
+		inMessage.respond(JSON.stringify(files.list(ROOT, payload.dir)));
+		break;
+	case "size":
+		inMessage.respond(JSON.stringify(files.size(ROOT, payload.path)));
+		break;
 	case "info":
-		inMessage.respond(JSON.stringify({returnValue: true, id: ID, methods: ["writeNew", "quit", "info"]}));
+		inMessage.respond(JSON.stringify({returnValue: true, id: ID, methods: METHODS}));
 		break;
 	case "quit":
 		inMessage.respond(JSON.stringify({returnValue: true, status: "quitting"}));

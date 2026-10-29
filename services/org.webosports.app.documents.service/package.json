@@ -1,7 +1,7 @@
 {
 	"name": "org.webosports.app.documents.service",
 	"version": "0.1.0",
-	"description": "Documents: writes a saved copy to a new file",
+	"description": "Documents: lists the documents under /media/internal and writes saved copies to new files",
 	"main": "service.js",
 	"license": "GPL-3.0-only"
 }

@@ -79,10 +79,12 @@ Features
 - **Library:** every document under `/media/internal` (the USB
   storage), the recently opened ones first. Filter by Text, Sheets or
   Slides; search by name. Hidden folders are not walked.
-- The folders are listed through the File Manager's service
-  (`org.webosports.service.filemanager`), the one directory listing a
-  web app has. It joins names with commas, so a name that has a comma
-  is put back together and checked before it is listed.
+- The folders are listed through the app's own service (`list` and
+  `size`, which read `/media/internal` and nothing outside it). A build
+  without the service lists through the File Manager's service
+  (`org.webosports.service.filemanager`) instead; that one joins names
+  with commas, so a name that has a comma is put back together and
+  checked before it is listed.
 - **Opened from other apps:** appinfo.json's `mimeTypes` registers the
   app for every kind it reads; `{"target": "file:///media/internal/..."}`
   (or a plain path) opens that document, also in an app already open.
@@ -272,7 +274,9 @@ Building
     WITH_SERVICE=1 tools/build-ipk.sh     ... with the service that saves copies
 
 The service (`services/org.webosports.app.documents.service/`, a few
-lines of node on palmbus) is left out by default. appinstalld asks a
+lines of node on palmbus) lists the library's folders and writes saved
+copies. It is left out of tools/build-ipk.sh's build by default; that
+build then lists through the File Manager's service and cannot save. appinstalld asks a
 package's JS services to quit before it updates or removes the package,
 and on the images tested (TouchPad, mindphone, Q25, 2026-10-16) its
 client permissions lack `applicationinstall.interface`, so that call is

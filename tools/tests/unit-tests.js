@@ -26,6 +26,7 @@ var Stream = require(path.join(ROOT, "source/core/SheetStream.js"));
 var Library = require(path.join(ROOT, "source/core/Library.js"));
 var Engine = require(path.join(ROOT, "source/core/Engine.js"));
 var writer = require(path.join(ROOT, "services/org.webosports.app.documents.service/writer.js"));
+var files = require(path.join(ROOT, "services/org.webosports.app.documents.service/files.js"));
 // The cloud's messages are localised with Enyo's $L in the app; here they are the English text.
 global.$L = function(inText) {
 	return inText;
@@ -665,6 +666,34 @@ t.test("library: the scanner walks folders, skips hidden ones and checks rebuilt
 	assert.strictEqual(docs[2].kind, "docx");
 });
 
+t.test("library: names that come as arrays are taken whole and not checked", async function() {
+	var tree = {
+		"/m": {dirs: ["Docs", ".hidden"], files: ["a.odt"]},
+		"/m/Docs": {dirs: [], files: ["Report, final.docx", "b.csv", "song.mp3"]},
+		"/m/.hidden": {dirs: [], files: ["secret.docx"]}
+	};
+	var checked = [];
+	var docs = await new Promise(function(resolve) {
+		new Library.Scanner({
+			list: function(inDir, inCallback) {
+				setTimeout(function() {
+					inCallback(tree[inDir] ? null : new Error("no"), tree[inDir]);
+				}, 1);
+			},
+			exists: function(inPath, inCallback) {
+				checked.push(inPath);
+				inCallback(false);
+			},
+			onDone: resolve
+		}).start("/m");
+	});
+	assert.deepStrictEqual(docs.map(function(d) {
+		return d.path;
+	}), ["/m/a.odt", "/m/Docs/b.csv", "/m/Docs/Report, final.docx"]);
+	assert.deepStrictEqual(checked, []);
+	assert.deepStrictEqual(Library.splitNames(["a,b.docx"]), [{name: "a,b.docx", joined: false}]);
+});
+
 t.test("library: launch targets, URLs and copy names", function() {
 	assert.strictEqual(Library.targetToPath("file:///media/internal/My%20Doc.odt"), "/media/internal/My Doc.odt");
 	assert.strictEqual(Library.targetToPath("/media/internal/a/../b.docx"), "/media/internal/b.docx");
@@ -997,6 +1026,62 @@ t.test("service: a missing folder fails cleanly and leaves nothing behind", func
 	var r = writer.writeNew(tmpRoot, tmpRoot + "nofolder/x.ods", Buffer.from("x").toString("base64"));
 	assert.strictEqual(r.returnValue, false);
 	assert.strictEqual(r.errorCode, "ENOENT");
+});
+
+// --- The service's listing ---------------------------------------------------------
+
+var listRoot = path.join(ROOT, "test-output", "list-root");
+var outside = path.join(ROOT, "test-output", "list-outside");
+
+function listTree() {
+	fs.rmSync(listRoot, {recursive: true, force: true});
+	fs.rmSync(outside, {recursive: true, force: true});
+	fs.mkdirSync(listRoot + "/Work/.hidden", {recursive: true});
+	fs.mkdirSync(outside, {recursive: true});
+	fs.writeFileSync(listRoot + "/a.odt", "12345");
+	fs.writeFileSync(listRoot + "/Work/Report, final.docx", "x");
+	fs.writeFileSync(outside + "/secret.docx", "secret");
+	fs.symlinkSync(listRoot + "/Work", listRoot + "/link-in");
+	fs.symlinkSync(outside, listRoot + "/link-out");
+	fs.symlinkSync(listRoot + "/nothing", listRoot + "/dangling.odt");
+}
+
+function sorted(inArray) {
+	return inArray.slice(0).sort();
+}
+
+t.test("service: lists folders and files with whole names, links by what they point at", function() {
+	listTree();
+	var r = files.list(listRoot + "/", listRoot);
+	assert.strictEqual(r.returnValue, true, JSON.stringify(r));
+	assert.deepStrictEqual(sorted(r.dirs), ["Work", "link-in", "link-out"]);
+	assert.deepStrictEqual(r.files, ["a.odt"], "the dangling link is left out, not the listing");
+	var w = files.list(listRoot + "/", listRoot + "/Work/");
+	assert.deepStrictEqual(w.dirs, [".hidden"]);
+	assert.deepStrictEqual(w.files, ["Report, final.docx"]);
+	assert.deepStrictEqual(files.list(listRoot + "/", listRoot + "/link-in").files, ["Report, final.docx"]);
+});
+
+t.test("service: gives a file's size", function() {
+	listTree();
+	assert.deepStrictEqual(files.size(listRoot + "/", listRoot + "/a.odt"), {returnValue: true, size: 5});
+	assert.strictEqual(files.size(listRoot + "/", listRoot + "/Work/Report, final.docx").size, 1);
+	assert.strictEqual(files.size(listRoot + "/", listRoot + "/none.odt").errorCode, "ENOENT");
+	assert.strictEqual(files.list(listRoot + "/", listRoot + "/none").errorCode, "ENOENT");
+});
+
+t.test("service: reads nothing outside the root, by path or through a link", function() {
+	listTree();
+	[outside, outside + "/secret.docx", listRoot + "/../list-outside", listRoot + "/Work/../../list-outside/secret.docx",
+		listRoot + "x", "/etc", "relative", "", listRoot + "/a.odt\u0000", undefined, 5, {}].forEach(function(p) {
+		assert.strictEqual(files.list(listRoot + "/", p).errorCode, "EINVAL", "list " + p);
+		assert.strictEqual(files.size(listRoot + "/", p).errorCode, "EINVAL", "size " + p);
+	});
+	// As writer.js: no "." or ".." in a path, also one that would stay inside.
+	assert.strictEqual(files.size(listRoot + "/", listRoot + "/Work/../a.odt").errorCode, "EINVAL");
+	assert.strictEqual(files.list(listRoot + "/", listRoot + "/./Work").errorCode, "EINVAL");
+	assert.strictEqual(files.list(listRoot + "/", listRoot + "/link-out").errorCode, "EINVAL");
+	assert.strictEqual(files.size(listRoot + "/", listRoot + "/link-out/secret.docx").errorCode, "EINVAL");
 });
 
 t.run();

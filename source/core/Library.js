@@ -1,15 +1,17 @@
 /**
 	Finds the documents on the device: walks /media/internal through the
-	File Manager's service (org.webosports.service.filemanager/GetDirectories),
-	the one directory listing a web app has on LuneOS.
+	app's own service (its list method, which gives names as arrays), or,
+	in a build without it, the File Manager's service
+	(org.webosports.service.filemanager/GetDirectories).
 
-	That service answers with the names joined by commas ("dirs": "a,b"),
-	so a name that itself has a comma arrives in pieces. splitNames() puts
-	the pieces of document names back together, and the scanner checks a
-	rejoined name exists before listing it.
+	The File Manager's service answers with the names joined by commas
+	("dirs": "a,b"), so a name that itself has a comma arrives in pieces.
+	splitNames() puts the pieces of document names back together, and the
+	scanner checks a rejoined name exists before listing it. Names that
+	come as an array are taken as they are.
 
 		var scan = new DocLibrary.Scanner({
-			list: function(dir, callback) {...},     // callback(err, {dirs: "..", files: ".."})
+			list: function(dir, callback) {...},     // callback(err, {dirs: [..] or "..", files: [..] or ".."})
 			exists: function(path, callback) {...},  // callback(true|false)
 			onDone: function(docs) {...}             // [{path, name, dir, kind}]
 		});
@@ -28,11 +30,17 @@
 		are joined back while the joined name ends in a document extension
 		and the piece alone does not ("Report, final.docx" -> one name).
 		Returns [{name, joined}] where joined says the name was rebuilt and
-		should be checked.
+		should be checked. An array (the app's own service) is already whole
+		names, none of them joined.
 	*/
 	function splitNames(inList) {
 		if (!inList) {
 			return [];
+		}
+		if (Array.isArray(inList)) {
+			return inList.map(function(inName) {
+				return {name: String(inName), joined: false};
+			});
 		}
 		var parts = String(inList).split(",");
 		var out = [];
@@ -112,7 +120,7 @@
 			};
 			if (!inErr && inResult) {
 				if (inEntry.depth < self.maxDepth) {
-					var dirs = String(inResult.dirs || "").split(",");
+					var dirs = Array.isArray(inResult.dirs) ? inResult.dirs : String(inResult.dirs || "").split(",");
 					for (var d = 0; d < dirs.length; d++) {
 						if (dirs[d] && !skipDirs.test(dirs[d]) && self.dirsSeen + self.queue.length < self.maxDirs) {
 							self.queue.push({path: inEntry.path + "/" + dirs[d], depth: inEntry.depth + 1});
