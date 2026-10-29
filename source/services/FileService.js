@@ -8,10 +8,13 @@
 		FileService.writeNew(path, bytes, function(err) {...});
 		FileService.convert(path, "odt", function(err, {target}) {...});   // LibreOffice, when installed
 
-	list and size are the File Manager's service
-	(org.webosports.service.filemanager, group filemanager-service.operation).
-	writeNew is this app's own service (services/org.webosports.app.documents.service),
-	which creates a file and refuses to replace one that exists.
+	list, size and writeNew are this app's own service
+	(services/org.webosports.app.documents.service). list gives the names as
+	arrays; writeNew creates a file and refuses to replace one that exists.
+	A build without the service (tools/build-ipk.sh without WITH_SERVICE)
+	lists through the File Manager's service instead
+	(org.webosports.service.filemanager, group filemanager-service.operation),
+	whose names come joined by commas.
 */
 var FileService = {
 	call: function(inUri, inParams, inCallback) {
@@ -58,14 +61,24 @@ var FileService = {
 	},
 
 	list: function(inDir, inCallback) {
-		this.call("luna://org.webosports.service.filemanager/GetDirectories", {dir: inDir}, function(inErr, inResult) {
-			inCallback(inErr, inErr ? null : {dirs: inResult.dirs || "", files: inResult.files || ""});
+		var self = this;
+		this.serviceAvailable(function(inOk) {
+			var uri = inOk ? "luna://" + self.appId() + ".service/list" :
+				"luna://org.webosports.service.filemanager/GetDirectories";
+			self.call(uri, {dir: inDir}, function(inErr, inResult) {
+				inCallback(inErr, inErr ? null : {dirs: inResult.dirs || "", files: inResult.files || ""});
+			});
 		});
 	},
 
 	size: function(inPath, inCallback) {
-		this.call("luna://org.webosports.service.filemanager/getFileSize", {path: inPath}, function(inErr, inResult) {
-			inCallback(inErr, inErr ? -1 : inResult.size);
+		var self = this;
+		this.serviceAvailable(function(inOk) {
+			var uri = inOk ? "luna://" + self.appId() + ".service/size" :
+				"luna://org.webosports.service.filemanager/getFileSize";
+			self.call(uri, {path: inPath}, function(inErr, inResult) {
+				inCallback(inErr, inErr ? -1 : inResult.size);
+			});
 		});
 	},
 

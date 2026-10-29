@@ -173,6 +173,15 @@ function scenario(inOptions) {
 			{error: {errorCode: -1, errorText: "Service does not exist: org.webosports.app.documents.service."}},
 		"luna://org.webosports.app.documents.service/writeNew": o.service ? {json: {path: "x", bytes: 1}} :
 			{error: {errorCode: -1, errorText: "Service does not exist"}},
+		// The app's own service lists with whole names; the File Manager's (above) joins them with commas.
+		"luna://org.webosports.app.documents.service/list": o.service ? {cases: [
+			{when: {dir: "/media/internal"}, json: {dirs: ["Work", ".thumbnails", "src"], files: files.split(",")}},
+			{when: {dir: "/media/internal/Work"}, json: {dirs: [], files: ["Report, final.docx", "todo.txt.bak"]}},
+			{when: {dir: "/media/internal/src"}, json: {dirs: [], files: ["sample.fodt", "sample.fods", "sample.fodp"]}}
+		], error: {errorCode: "ENOENT", errorText: "ENOENT"}} : {error: {errorCode: -1, errorText: "Service does not exist"}},
+		"luna://org.webosports.app.documents.service/size": o.service ? {cases: [
+			{when: {path: "/media/internal/Work/Report, final.docx"}, json: {size: 8404}}
+		], error: {errorCode: "ENOENT", errorText: "ENOENT"}} : {error: {errorCode: -1, errorText: "Service does not exist"}},
 		// LibreOffice's service: asked without a document it says badRequest; legacy.doc becomes sample.odt.
 		"luna://org.webosports.service.office/convert": o.office ? {cases: [
 			{when: {source: "/media/internal/legacy.doc", format: "odt"}, json: {target: "/media/internal/sample.odt", format: "odt", cached: false}}
@@ -301,6 +310,20 @@ t.test("library: a name with a comma is rebuilt and checked", async function() {
 	var names = await libraryNames();
 	assert.ok(names.indexOf("Report, final.docx") >= 0, names.join(", "));
 	assert.strictEqual((await calls("luna", "getFileSize")).length, 1);
+});
+
+t.test("library: with the app's service, listed through it, whole names and no File Manager", async function() {
+	await open(scenario({service: true}));
+	var names = await libraryNames();
+	["sample.docx", "sample.xlsx", "sample.fodt", "Report, final.docx"].forEach(function(n) {
+		assert.ok(names.indexOf(n) >= 0, n + " listed: " + names.join(", "));
+	});
+	assert.ok((await calls("luna", "documents.service/list")).length >= 3);
+	assert.strictEqual((await calls("luna", "GetDirectories")).length, 0);
+	assert.strictEqual((await calls("luna", "getFileSize")).length, 0, "a whole name needs no check");
+	assert.ok(!(await calls("luna", "documents.service/list")).some(function(c) {
+		return /thumbnails/.test(c.params.dir);
+	}), "hidden folders are not walked");
 });
 
 t.test("library: filter by kind and search by name", async function() {

@@ -1,9 +1,9 @@
 {
 	"id": "org.webosports.app.documents.service",
-	"description": "Documents: writes a saved copy to a new file",
+	"description": "Documents: lists the documents under /media/internal and writes saved copies to new files",
 	"engine": "node",
 	"services": [{
 		"name": "org.webosports.app.documents.service",
-		"description": "Documents: writes a saved copy to a new file"
+		"description": "Documents: lists the documents under /media/internal and writes saved copies to new files"
 	}]
 }
