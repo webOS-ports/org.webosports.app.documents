@@ -4,6 +4,9 @@
 		writeNew {"path": "/media/internal/.../Budget (edited).xlsx", "data": "<base64>"}
 			-> {"returnValue": true, "path", "bytes"}
 			-> {"returnValue": false, "errorCode": "EEXIST" | "EINVAL" | ..., "errorText"}
+		printCopy {"name": "Letter.docx", "data": "<base64>"}
+			-> {"returnValue": true, "path": "/media/internal/.documents/print/Letter.docx", "bytes"}
+			   an edited document to be printed; the one before it is removed
 		list {"dir": "/media/internal/..."}
 			-> {"returnValue": true, "dirs": [names], "files": [names]}
 		size {"path": "/media/internal/..."}
@@ -30,7 +33,7 @@ var IDLE_MS = 30000;
 process.title = ID;
 
 var handle = new palmbus.Handle(ID);
-var METHODS = ["writeNew", "list", "size", "quit", "info"];
+var METHODS = ["writeNew", "printCopy", "list", "size", "quit", "info"];
 
 METHODS.forEach(function(m) {
 	handle.registerMethod("/", m);
@@ -58,6 +61,9 @@ handle.addListener("request", function(inMessage) {
 	switch (inMessage.method()) {
 	case "writeNew":
 		inMessage.respond(JSON.stringify(writer.writeNew(ROOT, payload.path, payload.data)));
+		break;
+	case "printCopy":
+		inMessage.respond(JSON.stringify(writer.printCopy(ROOT, payload.name, payload.data)));
 		break;
 	case "list":
 		inMessage.respond(JSON.stringify(files.list(ROOT, payload.dir)));
