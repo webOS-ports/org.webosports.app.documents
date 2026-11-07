@@ -763,6 +763,22 @@ enyo.kind({
 		return kind === "spreadsheet" ? "xlsx" : kind === "presentation" ? "pptx" : kind === "drawing" ? "odp" : "docx";
 	},
 
+	//* The edited document as a PDF, in the office service's cache: inCallback(err, path)
+	savePdf: function(inCallback) {
+		var s = this.session;
+		if (!s) {
+			inCallback(new Error($L("Nothing to print.")));
+			return;
+		}
+		this.call("save", {session: s.id, format: "pdf"}, function(inErr, inResult) {
+			if (inErr || !inResult || !inResult.target) {
+				inCallback(inErr || new Error($L("LibreOffice could not make a PDF of the document.")));
+				return;
+			}
+			inCallback(null, inResult.target);
+		});
+	},
+
 	//* The edited document's bytes: inCallback(err, Uint8Array)
 	copyBytes: function(inCallback) {
 		var s = this.session;

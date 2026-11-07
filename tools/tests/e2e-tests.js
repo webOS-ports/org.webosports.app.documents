@@ -152,8 +152,8 @@ function acg() {
 /**
 	A LuneOS device with the fixtures on its USB storage. inOptions:
 	launchParams, service (true: the app's service is installed), cloud
-	(true: cloud accounts, see cloudLuna), luna (more rules), storage,
-	palmSystem.
+	(true: cloud accounts, see cloudLuna), print (true: the print service,
+	with one printer), luna (more rules), storage, palmSystem.
 */
 function scenario(inOptions) {
 	var o = inOptions || {};
@@ -173,6 +173,8 @@ function scenario(inOptions) {
 			{error: {errorCode: -1, errorText: "Service does not exist: org.webosports.app.documents.service."}},
 		"luna://org.webosports.app.documents.service/writeNew": o.service ? {json: {path: "x", bytes: 1}} :
 			{error: {errorCode: -1, errorText: "Service does not exist"}},
+		"luna://org.webosports.app.documents.service/printCopy": o.service ? {json: {path: "/media/internal/.documents/print/copy", bytes: 1}} :
+			{error: {errorCode: -1, errorText: "Service does not exist"}},
 		// The app's own service lists with whole names; the File Manager's (above) joins them with commas.
 		"luna://org.webosports.app.documents.service/list": o.service ? {cases: [
 			{when: {dir: "/media/internal"}, json: {dirs: ["Work", ".thumbnails", "src"], files: files.split(",")}},
@@ -184,7 +186,9 @@ function scenario(inOptions) {
 		], error: {errorCode: "ENOENT", errorText: "ENOENT"}} : {error: {errorCode: -1, errorText: "Service does not exist"}},
 		// LibreOffice's service: asked without a document it says badRequest; legacy.doc becomes sample.odt.
 		"luna://org.webosports.service.office/convert": o.office ? {cases: [
-			{when: {source: "/media/internal/legacy.doc", format: "odt"}, json: {target: "/media/internal/sample.odt", format: "odt", cached: false}}
+			{when: {source: "/media/internal/legacy.doc", format: "odt"}, json: {target: "/media/internal/sample.odt", format: "odt", cached: false}},
+			// Anything as a PDF, for the printer
+			{when: {format: "pdf"}, json: {target: "/media/internal/.cache/org.webosports.service.office/0f1e.pdf", format: "pdf", cached: false}}
 		], error: {errorCode: "badRequest", errorText: "source and format are required"}} :
 			{error: {errorCode: -1, errorText: "Service does not exist: org.webosports.service.office."}},
 		// Its editing sessions (o.lok): a service with them refuses an open without a document
@@ -211,13 +215,23 @@ function scenario(inOptions) {
 			"luna://org.webosports.service.office/extTextInput": ok,
 			"luna://org.webosports.service.office/uno": ok,
 			"luna://org.webosports.service.office/setPart": {json: {parts: 2, part: 1, width: 28000, height: 15750}},
-			"luna://org.webosports.service.office/save": {json: {target: "/media/internal/.cache/saved.pptx"}},
+			"luna://org.webosports.service.office/save": {cases: [
+				{when: {format: "pdf"}, json: {target: "/media/internal/.cache/saved.pdf"}}
+			], json: {target: "/media/internal/.cache/saved.pptx"}},
 			"luna://org.webosports.service.office/close": ok
 		});
 	}
 	if (o.cloud) {
 		Object.assign(luna, cloudLuna());
 	}
+	// luneos-print-adapter's com.palm.printmgr
+	Object.assign(luna, o.print ? {
+		"luna://com.palm.printmgr/printers/listActive": {json: {activePrinters: [
+			{printerID: "p1", printerName: "Office Printer", printerAddress: "192.168.1.50", source: "fromZeroconf"}]}},
+		"luna://com.palm.printmgr/jobs/allAtOnce": {json: {jobID: 7}}
+	} : {
+		"luna://com.palm.printmgr/printers/listActive": {error: {errorCode: -1, errorText: "Service does not exist: com.palm.printmgr."}}
+	});
 	Object.assign(luna, o.luna || {});
 	return {
 		webos: true,
@@ -537,7 +551,7 @@ t.test("zoom: in, out, and back to fit", async function() {
 t.test("night reading: dark pages, kept for the next start", async function() {
 	await open(scenario());
 	await openDoc("/media/internal/sample.odt");
-	await page.tap(".viewer-toolbar .viewer-tool:nth-child(6)");
+	await tapControl("documentsApp.$.viewer.$.nightButton");
 	assert.ok(await page.eval("documentsApp.$.viewer.hasClass('night')"));
 	var filter = await page.eval("getComputedStyle(document.querySelector('.doc-page')).filter");
 	assert.ok(/invert/.test(filter), filter);
@@ -551,7 +565,7 @@ t.test("night reading: dark pages, kept for the next start", async function() {
 t.test("document info: title, author, type and size", async function() {
 	await open(scenario());
 	await openDoc("/media/internal/sample.odt");
-	await page.tap(".viewer-toolbar .viewer-tool:nth-child(7)");
+	await tapControl("documentsApp.$.viewer.$.infoButton");
 	await page.waitFor("documentsApp.$.viewer.$.infoDialog.isOpen");
 	var info = await page.eval("documentsApp.$.viewer.$.infoDialog.hasNode().textContent");
 	assert.ok(/sample\.odt/.test(info) && /Fixture Text/.test(info) && /Documents tests/.test(info) &&
@@ -1089,6 +1103,137 @@ t.test("LibreOffice editing: not offered by a service without sessions", async f
 	assert.strictEqual(await page.eval("documentsApp.$.menuLok.showing"), false);
 });
 
+// --- Printing -------------------------------------------------------------------------
+
+//* The printers offered (the printer menu's captions), once it is open.
+async function printers() {
+	await page.waitFor("documentsApp.$.printerMenu.isOpen", 5000);
+	return page.eval("documentsApp.$.printerMenu.getControls().map(function(c){return c.caption;})");
+}
+
+//* Taps the printer called inName, waits for the job's word, and gives the job.
+async function printOn(inName) {
+	var names = await printers();
+	await tapControl("documentsApp.$.printerMenu.getControls()[" + names.indexOf(inName) + "]");
+	await page.waitFor("!documentsApp.$.printerMenu.isOpen", 5000);
+	await page.waitFor("/Sent to the printer|Could not print/.test(documentsApp.$.toaster.content)", 10000);
+	var jobs = await calls("luna", "printmgr/jobs/allAtOnce");
+	return jobs[jobs.length - 1];
+}
+
+t.test("print: the toolbar's printer and the app menu offer the printers; LibreOffice's PDF is sent", async function() {
+	await open(scenario({service: true, office: true, print: true}));
+	await page.waitFor("FileTypes.converter === true", 10000);
+	await openDoc("/media/internal/sample.docx");
+	await page.waitFor("documentsApp.$.viewer.$.printButton.showing");
+	// After Find, as proposed
+	var order = await page.eval("documentsApp.$.viewer.$.toolbar.getControls().map(function(c){return c.name;}).join(',')");
+	assert.ok(/findButton,printButton,nightButton/.test(order), order);
+	await tapControl("documentsApp.$.viewer.$.printButton");
+	assert.deepStrictEqual(await printers(), ["Office Printer"]);
+	var list = await calls("luna", "printmgr/printers/listActive");
+	assert.strictEqual(list[0].acg, "granted");
+	var job = await printOn("Office Printer");
+	assert.ok(/Sent to the printer/.test(await page.eval("documentsApp.$.toaster.content")));
+	// The unedited document: LibreOffice converts the file itself
+	var conv = (await calls("luna", "service.office/convert")).filter(function(c) {
+		return c.params.format === "pdf";
+	});
+	assert.strictEqual(conv.length, 1);
+	assert.strictEqual(conv[0].params.source, "/media/internal/sample.docx");
+	assert.deepStrictEqual(job.params, {printerID: "p1", description: "sample.docx", appName: "Documents",
+		pathNames: ["/media/internal/.cache/org.webosports.service.office/0f1e.pdf"], autoScale: true});
+	assert.strictEqual(job.acg, "granted");
+	assert.strictEqual((await calls("luna", "service/printCopy")).length, 0, "no copy of an unedited document");
+	// The app menu has Print too
+	await page.eval("documentsApp.$.appMenu.open(); 1");
+	await page.waitFor("documentsApp.$.appMenu.isOpen");
+	assert.strictEqual(await page.eval("documentsApp.$.menuPrint.showing"), true);
+	await tapControl("documentsApp.$.menuPrint");
+	assert.deepStrictEqual(await printers(), ["Office Printer"]);
+	if (SHOTS) {
+		await page.screenshot(path.join(OUT, "shots", "print-printers.png"));
+	}
+	// Back closes the printers, and the document stays open
+	await key("Escape");
+	await page.waitFor("!documentsApp.$.printerMenu.isOpen", 5000);
+	assert.strictEqual(await page.eval("documentsApp.$.pane.getViewName()"), "viewer");
+});
+
+t.test("print: an edited document is printed as it is shown, through a copy in the print folder", async function() {
+	await open(scenario({service: true, office: true, print: true}));
+	await page.waitFor("FileTypes.converter === true", 10000);
+	await openDoc("/media/internal/sample.txt");
+	await page.waitFor("documentsApp.$.viewer.$.editButton.showing");
+	await page.eval("documentsApp.$.viewer.toggleEdit(); 1");
+	await page.waitFor("document.querySelector('.doc-text-input')");
+	await page.eval("var a=document.querySelector('.doc-text-input'); a.value='Edited\\n' + a.value; a.dispatchEvent(new Event('input')); 1");
+	await page.waitFor("documentsApp.$.viewer.$.saveButton.showing");
+	// Printed while still editing: the text in the box counts
+	await page.eval("documentsApp.printDocument(); 1");
+	await printers();
+	var job = await printOn("Office Printer");
+	var copies = await calls("luna", "service/printCopy");
+	assert.strictEqual(copies.length, 1);
+	assert.strictEqual(copies[0].params.name, "sample.txt");
+	assert.strictEqual(copies[0].acg, "granted");
+	assert.ok(/^Edited\n/.test(Buffer.from(copies[0].params.data, "base64").toString("utf8")), "the edited text");
+	var conv = (await calls("luna", "service.office/convert")).filter(function(c) {
+		return c.params.format === "pdf";
+	});
+	assert.strictEqual(conv[0].params.source, "/media/internal/.documents/print/copy", "LibreOffice converts the copy");
+	assert.deepStrictEqual(job.params.pathNames, ["/media/internal/.cache/org.webosports.service.office/0f1e.pdf"]);
+	assert.strictEqual((await calls("luna", "service/writeNew")).length, 0, "nothing saved next to the original");
+});
+
+t.test("print: a document edited in LibreOffice is printed from its session", async function() {
+	await open(scenario({service: true, office: true, lok: true, print: true}));
+	await page.waitFor("FileTypes.lokSessions === true", 10000);
+	await openDoc("/media/internal/sample.pptx");
+	await page.eval("documentsApp.$.viewer.editWithLibreOffice(); 1");
+	await page.waitFor("documentsApp.$.viewer.$.lok.isOpen() && !!document.querySelector('.lok-tile')", 10000);
+	await page.eval("documentsApp.$.viewer.lokChanged(); 1");
+	await page.eval("documentsApp.printDocument(); 1");
+	await printers();
+	var job = await printOn("Office Printer");
+	var saves = await calls("luna", "service.office/save");
+	assert.strictEqual(saves.length, 1);
+	assert.deepStrictEqual(saves[0].params, {session: "s1", format: "pdf"});
+	assert.deepStrictEqual(job.params.pathNames, ["/media/internal/.cache/saved.pdf"]);
+	assert.strictEqual((await calls("luna", "service/printCopy")).length, 0);
+});
+
+t.test("print: without the print service, or a printer, it says so; without LibreOffice it is not offered", async function() {
+	await open(scenario({service: true, office: true}));
+	await page.waitFor("FileTypes.converter === true", 10000);
+	await openDoc("/media/internal/sample.odt");
+	await page.eval("documentsApp.printDocument(); 1");
+	await page.waitFor("/Printing is not available/.test(documentsApp.$.toaster.content)", 5000);
+	assert.strictEqual(await page.eval("!!documentsApp.$.printerMenu.isOpen"), false);
+	await open(scenario({service: true, office: true, luna: {
+		"luna://com.palm.printmgr/printers/listActive": {json: {activePrinters: []}}}}));
+	await page.waitFor("FileTypes.converter === true", 10000);
+	await openDoc("/media/internal/sample.odt");
+	await page.eval("documentsApp.printDocument(); 1");
+	await page.waitFor("/No printers found/.test(documentsApp.$.toaster.content)", 5000);
+	// A job the service refuses
+	await open(scenario({service: true, office: true, print: true, luna: {
+		"luna://com.palm.printmgr/jobs/allAtOnce": {error: {errorCode: -618, errorText: "unsupported or null mime type"}}}}));
+	await page.waitFor("FileTypes.converter === true", 10000);
+	await openDoc("/media/internal/sample.odt");
+	await page.eval("documentsApp.printDocument(); 1");
+	await printers();
+	await printOn("Office Printer");
+	assert.ok(/Could not print: unsupported or null mime type/.test(await page.eval("documentsApp.$.toaster.content")));
+	// LibreOffice's service not installed: no PDF can be made, so no Print
+	await open(scenario({service: true, print: true}));
+	await openDoc("/media/internal/sample.odt");
+	assert.strictEqual(await page.eval("documentsApp.$.viewer.$.printButton.showing"), false);
+	await page.eval("documentsApp.$.appMenu.open(); 1");
+	await page.waitFor("documentsApp.$.appMenu.isOpen");
+	assert.strictEqual(await page.eval("documentsApp.$.menuPrint.showing"), false);
+});
+
 // --- Cloud ------------------------------------------------------------------------
 
 //* The names the cloud view lists, once it has its answer.
@@ -1290,8 +1435,8 @@ t.test("cloud: Save a Copy of a downloaded workbook uploads it into the folder i
 
 [["tablet", 1024, 768], ["phone", 480, 800], ["square", 450, 380]].forEach(function(inSize) {
 	t.test("layout " + inSize[0] + " " + inSize[1] + "x" + inSize[2] + ": nothing wider than the screen, tools fit", async function() {
-		// With the service, so the edit tool is in the toolbar too.
-		await open(scenario({service: true, cloud: true}), {width: inSize[1], height: inSize[2]});
+		// With the services, so the edit and print tools are in the toolbar too.
+		await open(scenario({service: true, cloud: true, office: true}), {width: inSize[1], height: inSize[2]});
 		await libraryNames();
 		var lib = await page.eval("({doc: document.documentElement.scrollWidth, toolbar: document.querySelector('.library-toolbar').scrollWidth, " +
 			"cloud: document.querySelector('.library-cloud').getBoundingClientRect().right})");
@@ -1312,8 +1457,9 @@ t.test("cloud: Save a Copy of a downloaded workbook uploads it into the folder i
 		assert.ok(cloud.doc <= inSize[1] && cloud.toolbar <= inSize[1] && cloud.last <= inSize[1], JSON.stringify(cloud));
 		assert.deepStrictEqual(await clipped(".cloud"), [], "the cloud view's filter captions fit");
 		await page.eval("documentsApp.showLibrary(); 1");
+		await page.waitFor("FileTypes.converter === true", 10000);
 		await openDoc("/media/internal/sample.odt");
-		await page.waitFor("documentsApp.$.viewer.$.editButton.showing");
+		await page.waitFor("documentsApp.$.viewer.$.editButton.showing && documentsApp.$.viewer.$.printButton.showing");
 		var reflow = await page.eval("documentsApp.$.viewer.reflow");
 		assert.strictEqual(reflow, inSize[1] < 700, "phones read reflowed text");
 		var m = await page.eval("({page: document.querySelector('.doc-page').getBoundingClientRect().right, tools: document.querySelector('.viewer-toolbar').scrollWidth, " +

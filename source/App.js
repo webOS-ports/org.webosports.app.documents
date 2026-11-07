@@ -21,6 +21,7 @@ enyo.kind({
 			{name: "menuFind", caption: $L("Find"), onclick: "menuFind"},
 			{name: "menuNight", caption: $L("Night Reading"), onclick: "menuNight"},
 			{name: "menuInfo", caption: $L("Document Info"), onclick: "menuInfo"},
+			{name: "menuPrint", caption: $L("Print"), onclick: "printDocument"},
 			{name: "menuFreeze", caption: $L("Freeze First Row"), onclick: "menuFreeze"},
 			{name: "menuLok", caption: $L("Edit with LibreOffice"), onclick: "menuLok", showing: false},
 			{name: "menuRefresh", caption: $L("Look for Documents Again"), onclick: "rescan"},
@@ -30,8 +31,10 @@ enyo.kind({
 			{name: "library", kind: "LibraryView", onOpenDocument: "openDocument", onRefresh: "rescan", onCloud: "showCloud"},
 			{name: "cloud", kind: "CloudView", onOpenCloudDocument: "openCloudDocument", onLibrary: "showLibrary"},
 			{name: "viewer", kind: "ViewerView", lazy: false, onOpenLink: "openLink", onSaveCopy: "askSaveCopy",
-				onNight: "nightChanged", onOpened: "documentOpened", onHandOff: "handOffFromViewer"}
+				onNight: "nightChanged", onOpened: "documentOpened", onHandOff: "handOffFromViewer", onPrint: "printDocument"}
 		]},
+		// The printers luneos-print-adapter knows (com.palm.printmgr), to send the document to
+		{name: "printerMenu", kind: "PopupSelect", onSelect: "printerChosen"},
 		{name: "saveDialog", kind: "ModalDialog", caption: $L("Save a Copy"), components: [
 			{name: "saveNote", className: "save-note", content: ""},
 			{name: "saveName", kind: "Input", hint: $L("File name"), autoCapitalize: "lowercase", autocorrect: false,
@@ -339,7 +342,9 @@ enyo.kind({
 	},
 
 	goBack: function(inSender, inEvent) {
-		if (this.$.saveDialog.isOpen) {
+		if (this.$.printerMenu.isOpen) {
+			this.$.printerMenu.close();
+		} else if (this.$.saveDialog.isOpen) {
 			this.closeSave();
 		} else if (this.$.about.isOpen) {
 			this.closeAbout();
@@ -399,6 +404,8 @@ enyo.kind({
 		var sheet = inViewer && this.$.viewer.doc.family === "sheet";
 		this.$.menuFind.setDisabled(!inViewer);
 		this.$.menuInfo.setDisabled(!inViewer);
+		// LibreOffice makes the PDF the printer is sent
+		this.$.menuPrint.setShowing(inViewer && !!FileTypes.converter);
 		this.$.menuFreeze.setShowing(sheet);
 		// LibreOffice edits what it reads, in a session of the office service, when it has them
 		this.$.menuLok.setShowing(inViewer && FileTypes.lokSessions && !this.$.viewer.$.lok.isOpen());
@@ -416,6 +423,51 @@ enyo.kind({
 
 	menuInfo: function() {
 		this.$.viewer.showInfo();
+	},
+
+	// --- Printing --------------------------------------------------------
+
+	//* The printers, offered; the one picked is sent the document (printerChosen).
+	printDocument: function() {
+		var self = this;
+		if (!this.$.viewer.doc) {
+			return;
+		}
+		FileService.call("luna://com.palm.printmgr/printers/listActive", {}, function(inErr, inResult) {
+			var list = !inErr && inResult && inResult.activePrinters || [];
+			if (inErr) {
+				self.toast($L("Printing is not available"));
+			} else if (!list.length) {
+				self.toast($L("No printers found"));
+			} else {
+				self.$.printerMenu.setItems(list.map(function(p) {
+					return {caption: p.printerName || p.printerID, value: p.printerID};
+				}));
+				self.$.printerMenu.openAtCenter();
+			}
+		});
+	},
+
+	/**
+		The document as LibreOffice makes it a PDF (edits and all, see
+		ViewerView.printablePdf), sent as one job (jobs/allAtOnce).
+	*/
+	printerChosen: function(inSender, inSelected) {
+		var self = this;
+		var v = this.$.viewer;
+		var printer = inSelected.getValue();
+		var name = v.fileName;
+		this.toast($L("Preparing #{name} for the printer\u2026").replace("#{name}", name));
+		v.printablePdf(function(inErr, inPdf) {
+			if (inErr) {
+				self.toast($L("Could not print: ") + inErr.message);
+				return;
+			}
+			FileService.call("luna://com.palm.printmgr/jobs/allAtOnce", {printerID: printer, description: name,
+					appName: "Documents", pathNames: [inPdf], autoScale: true}, function(inErr2) {
+				self.toast(inErr2 ? $L("Could not print: ") + (inErr2.message || inErr2.code) : $L("Sent to the printer"));
+			});
+		});
 	},
 
 	menuFreeze: function() {
