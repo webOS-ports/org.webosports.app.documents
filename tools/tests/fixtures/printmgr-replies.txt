@@ -1,0 +1,9 @@
+== printers/list
+{"subscribed":false,"returnValue":true}
+== printers/getCurrent
+{"printerID":"","returnValue":true,"printerAddress":"","printerName":""}
+== caps Lexmark_MC2425adw
+{"canDuplex":true,"returnValue":true,"canPrintBorderless":false,"mediaType":["Plain","Brochure Matte"],"canPrintQualityHigh":true,"isSupported":true,"trays":["Auto","Manual","Tray1"],"hasPhotoTray":false,"hasFaceDownTray":false,"canPrintQualityDraft":true,"mediaSize":["ISO_A4","ISO_A6","US_Legal","US_Letter","HAGAKI"],"hasColor":true,"canPrintQualityNormal":true,"canGrayscale":true,"canCancel":true}
+/bin/sh: line 1: timeout: command not found
+{"subscribed":true,"returnValue":true}
+{"printerID":"Lexmark_MC2425adw","printerName":"Lexmark MC2425adw","printerAddress":"Lexmark MC2425adw._ipps._tcp.local","source":"fromZeroconf","eventType":"Add"}

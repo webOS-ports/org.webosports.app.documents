@@ -33,8 +33,10 @@ enyo.kind({
 			{name: "viewer", kind: "ViewerView", lazy: false, onOpenLink: "openLink", onSaveCopy: "askSaveCopy",
 				onNight: "nightChanged", onOpened: "documentOpened", onHandOff: "handOffFromViewer", onPrint: "printDocument"}
 		]},
-		// The printers luneos-print-adapter knows (com.palm.printmgr), to send the document to
-		{name: "printerMenu", kind: "PopupSelect", onSelect: "printerChosen"},
+		// webOS's print dialog: the printer and its options. The job it opens asks for the
+		// document as a PDF (renderDocument); the Print Manager shows how the job goes.
+		{name: "printDialog", kind: "PrintDialog", lazy: false, duplexOption: true, colorOption: true,
+			onRenderDocument: "renderDocument", appName: "Documents"},
 		{name: "saveDialog", kind: "ModalDialog", caption: $L("Save a Copy"), components: [
 			{name: "saveNote", className: "save-note", content: ""},
 			{name: "saveName", kind: "Input", hint: $L("File name"), autoCapitalize: "lowercase", autocorrect: false,
@@ -342,8 +344,8 @@ enyo.kind({
 	},
 
 	goBack: function(inSender, inEvent) {
-		if (this.$.printerMenu.isOpen) {
-			this.$.printerMenu.close();
+		if (this.$.printDialog.isOpen) {
+			this.$.printDialog.close();
 		} else if (this.$.saveDialog.isOpen) {
 			this.closeSave();
 		} else if (this.$.about.isOpen) {
@@ -427,46 +429,38 @@ enyo.kind({
 
 	// --- Printing --------------------------------------------------------
 
-	//* The printers, offered; the one picked is sent the document (printerChosen).
 	printDocument: function() {
-		var self = this;
 		if (!this.$.viewer.doc) {
 			return;
 		}
-		FileService.call("luna://com.palm.printmgr/printers/listActive", {}, function(inErr, inResult) {
-			var list = !inErr && inResult && inResult.activePrinters || [];
-			if (inErr) {
-				self.toast($L("Printing is not available"));
-			} else if (!list.length) {
-				self.toast($L("No printers found"));
-			} else {
-				self.$.printerMenu.setItems(list.map(function(p) {
-					return {caption: p.printerName || p.printerID, value: p.printerID};
-				}));
-				self.$.printerMenu.openAtCenter();
-			}
-		});
+		this.$.printDialog.setDescription(this.$.viewer.fileName);
+		this.$.printDialog.openAtCenter();
 	},
 
 	/**
-		The document as LibreOffice makes it a PDF (edits and all, see
-		ViewerView.printablePdf), sent as one job (jobs/allAtOnce).
+		The dialog's job asks for its pages: the document as LibreOffice makes
+		it a PDF (edits and all, see ViewerView.printablePdf), added to the job
+		as its one file. The render status tells the dialog that the job can be
+		closed (0), or why not.
 	*/
-	printerChosen: function(inSender, inSelected) {
-		var self = this;
-		var v = this.$.viewer;
-		var printer = inSelected.getValue();
-		var name = v.fileName;
-		this.toast($L("Preparing #{name} for the printer\u2026").replace("#{name}", name));
-		v.printablePdf(function(inErr, inPdf) {
+	renderDocument: function(inSender, inJobID, inPrintParams) {
+		var done = function(inCode, inText) {
+			FileService.call("luna://com.palm.printmgr/jobs/setRenderStatus",
+				{jobID: inJobID, renderResultCode: inCode, renderResultText: inText || ""}, function() {});
+		};
+		this.$.viewer.printablePdf(function(inErr, inPdf) {
 			if (inErr) {
-				self.toast($L("Could not print: ") + inErr.message);
+				done(-703, inErr.message);
 				return;
 			}
-			FileService.call("luna://com.palm.printmgr/jobs/allAtOnce", {printerID: printer, description: name,
-					appName: "Documents", pathNames: [inPdf], autoScale: true}, function(inErr2) {
-				self.toast(inErr2 ? $L("Could not print: ") + (inErr2.message || inErr2.code) : $L("Sent to the printer"));
-			});
+			FileService.call("luna://com.palm.printmgr/jobs/addFile",
+				{jobID: inJobID, pathName: inPdf, currentPage: 1, totalPages: 1}, function(inErr2) {
+					if (inErr2) {
+						done(typeof inErr2.code === "number" ? inErr2.code : -703, inErr2.message);
+					} else {
+						done(0);
+					}
+				});
 		});
 	},
 
