@@ -1028,6 +1028,55 @@ t.test("service: a missing folder fails cleanly and leaves nothing behind", func
 	assert.strictEqual(r.errorCode, "ENOENT");
 });
 
+t.test("service: a copy to print goes in the print folder, which keeps only the latest", function() {
+	fs.rmSync(tmpRoot + ".documents", {recursive: true, force: true});
+	var dir = tmpRoot + ".documents/print/";
+	var r = writer.printCopy(tmpRoot, "Letter.docx", Buffer.from("one").toString("base64"));
+	assert.strictEqual(r.returnValue, true, JSON.stringify(r));
+	assert.strictEqual(r.path, dir + "Letter.docx");
+	assert.strictEqual(fs.readFileSync(dir + "Letter.docx", "utf8"), "one");
+	// The same name again, and another: each replaces what was there
+	r = writer.printCopy(tmpRoot, "Letter.docx", Buffer.from("two").toString("base64"));
+	assert.strictEqual(r.returnValue, true, JSON.stringify(r));
+	assert.strictEqual(fs.readFileSync(dir + "Letter.docx", "utf8"), "two");
+	r = writer.printCopy(tmpRoot, "Budget.xlsx", Buffer.from("three").toString("base64"));
+	assert.strictEqual(r.returnValue, true, JSON.stringify(r));
+	assert.deepStrictEqual(fs.readdirSync(dir), ["Budget.xlsx"]);
+	// A folder in it is left alone
+	fs.mkdirSync(dir + "keep");
+	fs.writeFileSync(dir + "keep/inside.odt", "x");
+	assert.strictEqual(writer.printCopy(tmpRoot, "a.odt", Buffer.from("x").toString("base64")).returnValue, true);
+	assert.ok(fs.existsSync(dir + "keep/inside.odt"));
+	// writeNew may write there too, and still never replaces a file
+	assert.strictEqual(writer.writeNew(tmpRoot, dir + "a.odt", Buffer.from("y").toString("base64")).errorCode, "EEXIST");
+});
+
+t.test("service: a copy to print has a plain name, and no link in its way", function() {
+	var data = Buffer.from("x").toString("base64");
+	["", "a/b.odt", "../a.odt", ".hidden.odt", "a.sh", "a.pdf", "..", undefined, 5].forEach(function(n) {
+		assert.strictEqual(writer.printCopy(tmpRoot, n, data).errorCode, "EINVAL", String(n));
+	});
+	assert.strictEqual(writer.printCopy(tmpRoot, "a.odt", "").errorCode, "EINVAL");
+	// .documents/print as a link to a folder elsewhere: refused, and nothing there removed
+	var elsewhere = path.join(ROOT, "test-output", "writer-elsewhere");
+	fs.rmSync(elsewhere, {recursive: true, force: true});
+	fs.mkdirSync(elsewhere, {recursive: true});
+	fs.writeFileSync(elsewhere + "/precious.odt", "keep me");
+	fs.rmSync(tmpRoot + ".documents/print", {recursive: true, force: true});
+	fs.symlinkSync(elsewhere, tmpRoot + ".documents/print");
+	var r = writer.printCopy(tmpRoot, "a.odt", data);
+	assert.strictEqual(r.errorCode, "ENOTDIR", JSON.stringify(r));
+	assert.strictEqual(fs.readFileSync(elsewhere + "/precious.odt", "utf8"), "keep me");
+	assert.ok(!fs.existsSync(elsewhere + "/a.odt"));
+	// And .documents itself as a link
+	fs.rmSync(tmpRoot + ".documents", {recursive: true, force: true});
+	fs.symlinkSync(elsewhere, tmpRoot + ".documents");
+	assert.strictEqual(writer.printCopy(tmpRoot, "a.odt", data).errorCode, "ENOTDIR");
+	assert.strictEqual(fs.readFileSync(elsewhere + "/precious.odt", "utf8"), "keep me");
+	assert.deepStrictEqual(fs.readdirSync(elsewhere), ["precious.odt"], "no folder made through the link");
+	fs.unlinkSync(tmpRoot + ".documents");
+});
+
 // --- The service's listing ---------------------------------------------------------
 
 var listRoot = path.join(ROOT, "test-output", "list-root");

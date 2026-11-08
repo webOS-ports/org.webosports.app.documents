@@ -21,6 +21,7 @@ enyo.kind({
 			{name: "menuFind", caption: $L("Find"), onclick: "menuFind"},
 			{name: "menuNight", caption: $L("Night Reading"), onclick: "menuNight"},
 			{name: "menuInfo", caption: $L("Document Info"), onclick: "menuInfo"},
+			{name: "menuPrint", caption: $L("Print"), onclick: "printDocument"},
 			{name: "menuFreeze", caption: $L("Freeze First Row"), onclick: "menuFreeze"},
 			{name: "menuLok", caption: $L("Edit with LibreOffice"), onclick: "menuLok", showing: false},
 			{name: "menuRefresh", caption: $L("Look for Documents Again"), onclick: "rescan"},
@@ -30,8 +31,12 @@ enyo.kind({
 			{name: "library", kind: "LibraryView", onOpenDocument: "openDocument", onRefresh: "rescan", onCloud: "showCloud"},
 			{name: "cloud", kind: "CloudView", onOpenCloudDocument: "openCloudDocument", onLibrary: "showLibrary"},
 			{name: "viewer", kind: "ViewerView", lazy: false, onOpenLink: "openLink", onSaveCopy: "askSaveCopy",
-				onNight: "nightChanged", onOpened: "documentOpened", onHandOff: "handOffFromViewer"}
+				onNight: "nightChanged", onOpened: "documentOpened", onHandOff: "handOffFromViewer", onPrint: "printDocument"}
 		]},
+		// webOS's print dialog: the printer and its options. The job it opens asks for the
+		// document as a PDF (renderDocument); the Print Manager shows how the job goes.
+		{name: "printDialog", kind: "PrintDialog", lazy: false, duplexOption: true, colorOption: true,
+			onRenderDocument: "renderDocument", appName: "Documents"},
 		{name: "saveDialog", kind: "ModalDialog", caption: $L("Save a Copy"), components: [
 			{name: "saveNote", className: "save-note", content: ""},
 			{name: "saveName", kind: "Input", hint: $L("File name"), autoCapitalize: "lowercase", autocorrect: false,
@@ -339,7 +344,9 @@ enyo.kind({
 	},
 
 	goBack: function(inSender, inEvent) {
-		if (this.$.saveDialog.isOpen) {
+		if (this.$.printDialog.isOpen) {
+			this.$.printDialog.close();
+		} else if (this.$.saveDialog.isOpen) {
 			this.closeSave();
 		} else if (this.$.about.isOpen) {
 			this.closeAbout();
@@ -399,6 +406,8 @@ enyo.kind({
 		var sheet = inViewer && this.$.viewer.doc.family === "sheet";
 		this.$.menuFind.setDisabled(!inViewer);
 		this.$.menuInfo.setDisabled(!inViewer);
+		// LibreOffice makes the PDF the printer is sent
+		this.$.menuPrint.setShowing(inViewer && !!FileTypes.converter);
 		this.$.menuFreeze.setShowing(sheet);
 		// LibreOffice edits what it reads, in a session of the office service, when it has them
 		this.$.menuLok.setShowing(inViewer && FileTypes.lokSessions && !this.$.viewer.$.lok.isOpen());
@@ -416,6 +425,43 @@ enyo.kind({
 
 	menuInfo: function() {
 		this.$.viewer.showInfo();
+	},
+
+	// --- Printing --------------------------------------------------------
+
+	printDocument: function() {
+		if (!this.$.viewer.doc) {
+			return;
+		}
+		this.$.printDialog.setDescription(this.$.viewer.fileName);
+		this.$.printDialog.openAtCenter();
+	},
+
+	/**
+		The dialog's job asks for its pages: the document as LibreOffice makes
+		it a PDF (edits and all, see ViewerView.printablePdf), added to the job
+		as its one file. The render status tells the dialog that the job can be
+		closed (0), or why not.
+	*/
+	renderDocument: function(inSender, inJobID, inPrintParams) {
+		var done = function(inCode, inText) {
+			FileService.call("luna://com.palm.printmgr/jobs/setRenderStatus",
+				{jobID: inJobID, renderResultCode: inCode, renderResultText: inText || ""}, function() {});
+		};
+		this.$.viewer.printablePdf(function(inErr, inPdf) {
+			if (inErr) {
+				done(-703, inErr.message);
+				return;
+			}
+			FileService.call("luna://com.palm.printmgr/jobs/addFile",
+				{jobID: inJobID, pathName: inPdf, currentPage: 1, totalPages: 1}, function(inErr2) {
+					if (inErr2) {
+						done(typeof inErr2.code === "number" ? inErr2.code : -703, inErr2.message);
+					} else {
+						done(0);
+					}
+				});
+		});
 	},
 
 	menuFreeze: function() {

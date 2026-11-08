@@ -42,6 +42,8 @@
 	  calls     [{kind: "http"|"luna", url, params, unmocked}] in call order
 	  relaunch(params), activate(), deactivate(): fire the webOS lifecycle
 	  set(path, rule): change a luna/http rule while the page runs
+	  push(url, json): send one more answer to the calls of url still open (a
+	                   subscription's later event, as the service would)
 */
 (function() {
 	var config = window.__MOCK_CONFIG__ || {};
@@ -161,6 +163,8 @@
 			return {allowed: ok, result: ok ? "granted" : "denied: needs one of " + groups.join(", ")};
 		};
 
+		// The calls of each luna URL, for push()
+		var openCalls = {};
 		window.PalmServiceBridge = function() {
 			this.cancelled = false;
 		};
@@ -193,6 +197,9 @@
 			}
 			var acg = checkAcg(url);
 			calls.push({kind: "luna", url: url, params: params, unmocked: !rule && acg.allowed, acg: acg.result});
+			if (acg.allowed && rule) {
+				(openCalls[url] = openCalls[url] || []).push(self);
+			}
 			if (!acg.allowed) {
 				// What ls-hubd answers for a method the app has no permission group for.
 				rule = {error: {errorCode: -1, errorText: "Denied method call \"" + url.replace(/^.*\//, "") + "\" for category \"/\""}};
@@ -250,6 +257,17 @@
 		};
 
 		// The lifecycle hooks webos-lib's LunaBindings installs on Mojo.
+		mock.push = function(inUrl, inJson) {
+			var url = inUrl.replace(/^palm:\/\//, "luna://");
+			var sent = 0;
+			(openCalls[url] || []).forEach(function(inBridge) {
+				if (!inBridge.cancelled && inBridge.onservicecallback) {
+					inBridge.onservicecallback(JSON.stringify(Object.assign({returnValue: true}, clone(inJson) || {})));
+					sent++;
+				}
+			});
+			return sent;
+		};
 		mock.relaunch = function(inParams) {
 			window.PalmSystem.launchParams = JSON.stringify(inParams || {});
 			window.Mojo && window.Mojo.relaunch && window.Mojo.relaunch();

@@ -137,6 +137,20 @@ Features
   cell), then goes back to the library (or the cloud folder the document
   was opened from).
 
+### Printing
+
+The printer in the toolbar (after Find), or Print in the app menu,
+offers the printers luneos-print-adapter knows (com.palm.printmgr) and
+sends the document to the one picked as one job. The printer is sent a
+PDF, which LibreOffice's service makes, so Print is offered only where
+that service is installed. What is printed is what is shown: an edited
+document is written to the app's print folder
+(`/media/internal/.documents/print/`, which keeps only the copy printed
+last) in the format Save a Copy writes, and LibreOffice makes the PDF
+from that; a document edited in LibreOffice is saved as a PDF by its
+session. Without the print service, or without a printer, it says so.
+The app asks for `print.query` and `print.operation`.
+
 ### Editing
 
 **Save a Copy** writes a new file next to the original ("Budget
@@ -275,7 +289,7 @@ Building
 
 The service (`services/org.webosports.app.documents.service/`, a few
 lines of node on palmbus) lists the library's folders and writes saved
-copies. It is left out of tools/build-ipk.sh's build by default; that
+copies, and the copy of an edited document that is printed. It is left out of tools/build-ipk.sh's build by default; that
 build then lists through the File Manager's service and cannot save. appinstalld asks a
 package's JS services to quit before it updates or removes the package,
 and on the images tested (TouchPad, mindphone, Q25, 2026-10-16) its

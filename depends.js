@@ -1,4 +1,5 @@
 enyo.depends(
+	"$enyo-lib/printdialog/",
 	"source/core/Xml.js",
 	"source/core/FileTypes.js",
 	"source/core/Odf.js",

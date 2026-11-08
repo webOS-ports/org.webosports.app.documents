@@ -19,6 +19,7 @@ enyo.kind({
 		onOpenLink: "",
 		onHandOff: "",
 		onSaveCopy: "",
+		onPrint: "",
 		onNight: ""
 	},
 	zoomSteps: [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4],
@@ -58,6 +59,7 @@ enyo.kind({
 			{kind: "ToolButton", name: "zoomIn", className: "viewer-tool", icon: "images/zoom-in.svg", onclick: "zoomIn"},
 			{kind: "ToolButton", name: "layoutButton", className: "viewer-tool", icon: "images/reflow.svg", onclick: "toggleLayout"},
 			{kind: "ToolButton", name: "findButton", className: "viewer-tool", icon: "images/find.svg", onclick: "openFind"},
+			{kind: "ToolButton", name: "printButton", className: "viewer-tool", icon: "images/print.svg", onclick: "printClick", showing: false},
 			{kind: "ToolButton", name: "nightButton", className: "viewer-tool", icon: "images/night.svg", onclick: "toggleNight"},
 			{kind: "ToolButton", name: "infoButton", className: "viewer-tool", icon: "images/info.svg", onclick: "showInfo"},
 			{kind: "ToolButton", name: "editButton", className: "viewer-tool", icon: "images/edit.svg", onclick: "toggleEdit", showing: false}
@@ -526,6 +528,8 @@ enyo.kind({
 		this.$.findButton.setDisabled(!own);
 		this.$.nightButton.setDisabled(!own);
 		this.$.infoButton.setDisabled(!has);
+		// LibreOffice makes the PDF the printer is sent
+		this.$.printButton.setShowing(has && !!FileTypes.converter);
 		this.$.layoutButton.setShowing(reflowable);
 		this.$.layoutButton.setIcon(this.reflow ? "images/page.svg" : "images/reflow.svg");
 		this.updateZoomLabel();
@@ -1215,6 +1219,73 @@ enyo.kind({
 			return;
 		}
 		DocLoader.save(inRequest, inCallback);
+	},
+
+	// --- Printing ----------------------------------------------------------
+
+	printClick: function() {
+		this.doPrint();
+	},
+
+	/**
+		The document as a PDF for the printer, made by LibreOffice's service:
+		as it is shown, edits and all. An edited document is written to the
+		app's print folder first, in the format Save a Copy writes, and
+		LibreOffice's session saves its own. inCallback(err, pdfPath)
+	*/
+	printablePdf: function(inCallback) {
+		var self = this, token = this.loadToken;
+		var done = function(inErr, inPdf) {
+			if (token !== self.loadToken) {
+				inCallback(new Error($L("The document was closed.")));
+				return;
+			}
+			inCallback(inErr, inErr ? null : inPdf);
+		};
+		var converted = function(inErr, inResult) {
+			done(inErr, inResult && inResult.target);
+		};
+		if (!this.doc || !this.path) {
+			inCallback(new Error($L("Nothing to print.")));
+			return;
+		}
+		if (!this.edited) {
+			FileService.convert(this.path, "pdf", converted);
+			return;
+		}
+		if (this.$.lok.isOpen()) {
+			this.$.lok.savePdf(done);
+			return;
+		}
+		var write = function() {
+			var req = self.saveRequest();
+			self.makeCopy(req, function(inErr, inBytes) {
+				if (inErr) {
+					done(inErr);
+					return;
+				}
+				var bytes = new Uint8Array(inBytes.buffer || inBytes, inBytes.byteOffset || 0, inBytes.byteLength);
+				FileService.printCopy(self.printName(req.format), bytes, function(inErr2, inResult) {
+					if (inErr2) {
+						done(inErr2);
+						return;
+					}
+					FileService.convert(inResult.path, "pdf", converted);
+				});
+			});
+		};
+		if (this.doc.family === "sheet") {
+			this.$.sheet.commitEdit();
+			write();
+		} else {
+			this.commitParagraph(write);
+		}
+	},
+
+	//* The name of the copy printed: the document's, in inFormat.
+	printName: function(inFormat) {
+		var base = String(this.fileName || "").replace(/\.[^.]*$/, "").replace(/^\.+/, "");
+		return (base || $L("Document")) + "." + inFormat;
 	},
 
 	// --- Editing in LibreOffice (LokEditor.js) -----------------------------

@@ -7,8 +7,9 @@
 		FileService.openWith(path, "application/pdf", function(err) {...}); // in the MIME type's app
 		FileService.writeNew(path, bytes, function(err) {...});
 		FileService.convert(path, "odt", function(err, {target}) {...});   // LibreOffice, when installed
+		FileService.printCopy("Letter.docx", bytes, function(err, {path}) {...}); // an edited document to print
 
-	list, size and writeNew are this app's own service
+	list, size, writeNew and printCopy are this app's own service
 	(services/org.webosports.app.documents.service). list gives the names as
 	arrays; writeNew creates a file and refuses to replace one that exists.
 	A build without the service (tools/build-ipk.sh without WITH_SERVICE)
@@ -147,13 +148,27 @@ var FileService = {
 	},
 
 	writeNew: function(inPath, inBytes, inCallback) {
+		this.call("luna://" + this.appId() + ".service/writeNew", {path: inPath, data: this.base64(inBytes)}, function(inErr, inResult) {
+			inCallback(inErr, inResult);
+		});
+	},
+
+	/**
+		Writes inBytes (Uint8Array), an edited document to be printed, as
+		inName in the app's print folder (/media/internal/.documents/print/),
+		replacing the one printed before: {path}.
+	*/
+	printCopy: function(inName, inBytes, inCallback) {
+		this.call("luna://" + this.appId() + ".service/printCopy", {name: inName, data: this.base64(inBytes)}, inCallback);
+	},
+
+	//* Uint8Array -> base64, in pieces (String.fromCharCode takes only so many arguments).
+	base64: function(inBytes) {
 		var bin = "";
 		var chunk = 0x8000;
 		for (var i = 0; i < inBytes.length; i += chunk) {
 			bin += String.fromCharCode.apply(null, inBytes.subarray(i, i + chunk));
 		}
-		this.call("luna://" + this.appId() + ".service/writeNew", {path: inPath, data: btoa(bin)}, function(inErr, inResult) {
-			inCallback(inErr, inResult);
-		});
+		return btoa(bin);
 	}
 };
