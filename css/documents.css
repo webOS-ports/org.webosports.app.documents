@@ -170,6 +170,17 @@
 	}
 }
 
+/* The narrowest phones (Galaxy Nexus 400, Nexus 5 and Mi A1 415 CSS px):
+   at 84px the four filters and the two tool buttons are 422px wide, and the
+   cloud button falls off the toolbar's end. */
+@media (max-width: 440px) {
+	.library-filters .enyo-grouped-toolbutton {
+		min-width: 76px;
+		border-left-width: 10px;
+		border-right-width: 10px;
+	}
+}
+
 .library-toolbar .enyo-tool-button-client > .enyo-button-icon,
 .viewer-tool .enyo-tool-button-client > .enyo-button-icon {
 	width: 28px;
